@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+.env
+WORKFLOW.md
+usage_example.md
+jonezz-instructions.md
