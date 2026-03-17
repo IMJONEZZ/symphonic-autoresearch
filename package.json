@@ -1,0 +1,32 @@
+{
+  "name": "symphony",
+  "version": "1.0.0",
+  "description": "A long-running automation service that orchestrates coding agents through issue trackers",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "symphony": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.0",
+    "commander": "^13.0.0",
+    "express": "^4.21.0",
+    "liquidjs": "^10.20.0",
+    "pino": "^9.6.0",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

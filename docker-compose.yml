@@ -1,0 +1,35 @@
+services:
+  symphony:
+    build: .
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ipc: host
+    ports:
+      - "8080:8080"
+    volumes:
+      # HuggingFace cache (datasets, models)
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      # OpenCode binary and runtime
+      - ${HOME}/.opencode:/root/.opencode
+      # OpenCode configuration (providers, agents, rules)
+      - ${HOME}/.config/opencode:/root/.config/opencode
+      # NAS storage
+      - /mnt/nas:/mnt/nas
+      # Persist workspace across restarts
+      - symphony_workspaces:/root/symphony_workspaces
+      # Persist autoresearch cache (tokenizer, data shards)
+      - autoresearch_cache:/root/.cache/autoresearch
+    environment:
+      - PATH=/root/.opencode/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+      - NVIDIA_VISIBLE_DEVICES=all
+    working_dir: /workspace
+
+volumes:
+  symphony_workspaces:
+  autoresearch_cache:
