@@ -72,7 +72,7 @@ Wake up to ~100 experiments and (hopefully) a better model.
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/symphonic-autoresearch.git
+git clone https://github.com/IMJONEZZ/symphonic-autoresearch.git
 cd symphonic-autoresearch
 
 # Create your configuration from the example
@@ -85,7 +85,7 @@ docker compose up --build
 
 ### Access the Dashboard
 
-Open http://localhost:8080 to see:
+Open http://<ip-address-of-machine>:8080 to see:
 - Live training progress (loss, tok/s, MFU)
 - Experiment history from `results.tsv`
 - GPU metrics (temperature, VRAM, power draw)
@@ -106,7 +106,7 @@ workspace:
 
 opencode:
   command: opencode
-  model: your-model-here  # e.g., lmstudio/glm-5@q4_k_xl
+  model: your-model-here  # I used lmstudio/glm-5@q4_k_xl
 
 autoresearch:
   program_md: ./autoresearch/program.md
@@ -121,26 +121,6 @@ server:
 ```
 
 See `example.WORKFLOW.md` for all available options.
-
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Symphonic Autoresearch                    ● Running        │
-├─────────────────────────────────────────────────────────────┤
-│ Orchestrator spawns OpenCode with program.md prompt         │
-│     ↓                                                       │
-│ Agent reads results.tsv, modifies train.py                  │
-│     ↓                                                       │
-│ Training runs for 5 minutes (TIME_BUDGET)                   │
-│     ↓                                                       │
-│ val_bpb extracted, logged to results.tsv                    │
-│     ↓                                                       │
-│ If improved → keep changes; if worse → git reset            │
-│     ↓                                                       │
-│ Repeat forever (or until crash → auto-restart)              │
-└─────────────────────────────────────────────────────────────┘
-```
 
 ## Project Structure
 
@@ -164,7 +144,7 @@ symphonic-autoresearch/
 
 ## License
 
-See [LICENSE](./LICENSE) for details. Free to use; revenue sharing applies for commercial deployments.
+See [LICENSE](./LICENSE) for details. Free to use; revenue sharing applies for commercial deployments or replication.
 
 ## Credits
 
