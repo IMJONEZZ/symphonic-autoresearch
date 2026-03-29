@@ -1,7 +1,7 @@
 ---
 # Autoresearch Configuration
 # Change these values to run experiments with different models and datasets.
-# After changing, restart symphony to pick up the new config.
+# After changing, restart symphonic-autoresearch to pick up the new config.
 
 # Base model architecture (currently: karpathy's GPT from scratch)
 # Future: specify a HuggingFace model ID to fine-tune instead
@@ -15,8 +15,8 @@ dataset: HuggingFaceFW/fineweb-edu
 # Training time budget per experiment (seconds)
 time_budget: 300
 
-# OpenCode model for the AI researcher agent
-agent_model: lmstudio/minimax-m2.5-mlx@4bit
+# OpenCode model for the AI researcher agent (configure in WORKFLOW.md)
+agent_model: your-model-here
 
 # Hardware target
 hardware: dgx-spark

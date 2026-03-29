@@ -24,6 +24,6 @@ else
     echo "Autoresearch data already prepared at $CACHE_DIR"
 fi
 
-# 4. Start symphony
-echo "Starting Symphony in autoresearch mode..."
+# 4. Start symphonic-autoresearch
+echo "Starting Symphonic Autoresearch in autoresearch mode..."
 exec node dist/index.js ./WORKFLOW.md --port 8080

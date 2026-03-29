@@ -71,7 +71,7 @@ function buildPollingConfig(raw: Record<string, unknown>) {
 
 function buildWorkspaceConfig(raw: Record<string, unknown>) {
   const rootRaw = getString(raw, "root", "");
-  const defaultRoot = path.join(os.tmpdir(), "symphony_workspaces");
+  const defaultRoot = path.join(os.tmpdir(), "symphonic-autoresearch-workspaces");
   const root = rootRaw ? expandPath(rootRaw) : defaultRoot;
   return { root };
 }
@@ -126,6 +126,10 @@ function buildAutoresearchConfig(raw: Record<string, unknown>) {
     run_tag: getString(raw, "run_tag", new Date().toISOString().slice(5, 10).replace("-", "")),
     restart_on_crash: getBool(raw, "restart_on_crash", true),
     max_crash_restarts: getInt(raw, "max_crash_restarts", 10),
+    knowledge_enabled: getBool(raw, "knowledge_enabled", false),
+    embedding_endpoint: getStringOrNull(raw, "embedding_endpoint"),
+    embedding_model: getString(raw, "embedding_model", ""),
+    searxng_endpoint: getStringOrNull(raw, "searxng_endpoint"),
   };
 }
 

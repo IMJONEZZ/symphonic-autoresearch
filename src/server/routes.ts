@@ -4,6 +4,25 @@ import { renderDashboard } from "./dashboard.js";
 
 export function createRoutes(orchestrator: Orchestrator): Router {
   const router = Router();
+  const startTime = Date.now();
+
+  // Health check endpoint (for Docker health checks, load balancers, monitoring)
+  router.get("/health", (_req: Request, res: Response) => {
+    const snapshot = orchestrator.getSnapshot();
+    const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+    
+    res.json({
+      status: "ok",
+      uptime_seconds: uptimeSeconds,
+      mode: snapshot.mode,
+      running_count: snapshot.counts.running,
+      retrying_count: snapshot.counts.retrying,
+      crash_restarts: snapshot.agent_totals.crash_restarts,
+      experiments_run: snapshot.agent_totals.experiments_run,
+      autoresearch_active: snapshot.autoresearch?.active ?? false,
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   // Human-readable dashboard
   router.get("/", (_req: Request, res: Response) => {
@@ -38,6 +57,16 @@ export function createRoutes(orchestrator: Orchestrator): Router {
     }
   });
 
+  // JSON API: hardware metrics
+  router.get("/api/v1/hardware", (_req: Request, res: Response) => {
+    try {
+      const metrics = orchestrator.getHardwareMetrics();
+      res.json(metrics ?? { status: "unavailable" });
+    } catch {
+      res.status(500).json({ error: { code: "unavailable", message: "Failed to get hardware metrics" } });
+    }
+  });
+
   // JSON API: experiment results
   router.get("/api/v1/results", (_req: Request, res: Response) => {
     try {
@@ -67,6 +96,22 @@ export function createRoutes(orchestrator: Orchestrator): Router {
       requested_at: new Date().toISOString(),
       operations: ["poll", "reconcile"],
     });
+  });
+
+  // JSON API: queue user instruction
+  router.post("/api/v1/instruction", (req: Request, res: Response) => {
+    const { message } = req.body;
+    if (!message || typeof message !== "string" || !message.trim()) {
+      res.status(400).json({ error: { code: "invalid_input", message: "Message is required" } });
+      return;
+    }
+    orchestrator.queueInstruction(message.trim());
+    res.status(202).json({ queued: true, submitted_at: new Date().toISOString() });
+  });
+
+  // JSON API: poll instruction status
+  router.get("/api/v1/instruction", (_req: Request, res: Response) => {
+    res.json(orchestrator.getInstructionStatus());
   });
 
   // JSON API: issue-specific details

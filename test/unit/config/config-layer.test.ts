@@ -24,7 +24,7 @@ describe("buildServiceConfig", () => {
     expect(config.opencode.command).toBe("opencode");
     expect(config.opencode.stall_timeout_ms).toBe(300000);
     expect(config.hooks.timeout_ms).toBe(60000);
-    expect(config.workspace.root).toBe(path.join(os.tmpdir(), "symphony_workspaces"));
+    expect(config.workspace.root).toBe(path.join(os.tmpdir(), "symphonic-autoresearch-workspaces"));
   });
 
   it("reads tracker config", () => {

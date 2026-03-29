@@ -1,5 +1,5 @@
 services:
-  symphony:
+  symphonic-autoresearch:
     build: .
     runtime: nvidia
     deploy:
@@ -12,6 +12,12 @@ services:
     ipc: host
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     volumes:
       # HuggingFace cache (datasets, models)
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
@@ -19,10 +25,10 @@ services:
       - ${HOME}/.opencode:/root/.opencode
       # OpenCode configuration (providers, agents, rules)
       - ${HOME}/.config/opencode:/root/.config/opencode
-      # NAS storage
-      - /mnt/nas:/mnt/nas
+      # Optional: NAS storage (remove if not needed)
+      # - /mnt/nas:/mnt/nas
       # Persist workspace across restarts
-      - symphony_workspaces:/root/symphony_workspaces
+      - symphonic-autoresearch-workspaces:/root/symphonic-autoresearch-workspaces
       # Persist autoresearch cache (tokenizer, data shards)
       - autoresearch_cache:/root/.cache/autoresearch
     environment:
@@ -31,5 +37,5 @@ services:
     working_dir: /workspace
 
 volumes:
-  symphony_workspaces:
+  symphonic-autoresearch-workspaces:
   autoresearch_cache:

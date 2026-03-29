@@ -18,6 +18,16 @@ To set up a new experiment, work with the user to:
 
 Once you get confirmation, kick off the experimentation.
 
+## On Startup / Restart
+
+When you begin (or resume after a restart), ALWAYS:
+1. Check if `results.tsv` exists and read it to see what experiments have been run
+2. Run `git log --oneline -10` to understand the current branch state
+3. If experiments already exist, do NOT re-run the baseline — continue from the best result
+4. Do NOT repeat experiments that are listed as "discard" or "crash" in results.tsv
+5. Study the pattern of what worked (kept) vs what didn't (discarded) to inform your next idea
+6. Sanity-check val_bpb values: a fresh GPT baseline on FineWeb-Edu should produce val_bpb around 1.0-1.2 after 5 minutes. If you see values below 0.5 for a small model, something is likely wrong with the attention masking or evaluation — investigate before continuing.
+
 ## Experimentation
 
 Each experiment runs on a single GPU. The training script runs for a **fixed time budget of 5 minutes** (wall clock training time, excluding startup/compilation). You launch it simply as: `python train.py`.
@@ -65,27 +75,33 @@ grep "^val_bpb:" run.log
 
 When an experiment is done, log it to `results.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
 
-The TSV has a header row and 5 columns:
+The TSV has a header row and 6 columns:
 
 ```
-commit	val_bpb	memory_gb	status	description
+commit	val_bpb	final_loss	memory_gb	status	description
 ```
 
 1. git commit hash (short, 7 chars)
 2. val_bpb achieved (e.g. 1.234567) — use 0.000000 for crashes
-3. peak memory in GB, round to .1f (e.g. 12.3 — divide peak_vram_mb by 1024) — use 0.0 for crashes
-4. status: `keep`, `discard`, or `crash`
-5. short text description of what this experiment tried
+3. final_loss: the last loss value from training (from the last training step line in run.log) — use 0.000000 for crashes
+4. peak memory in GB, round to .1f (e.g. 12.3 — divide peak_vram_mb by 1024) — use 0.0 for crashes
+5. status: `keep`, `discard`, or `crash`
+6. short text description of what this experiment tried
 
 Example:
 
 ```
-commit	val_bpb	memory_gb	status	description
-a1b2c3d	0.997900	44.0	keep	baseline
-b2c3d4e	0.993200	44.2	keep	increase LR to 0.04
-c3d4e5f	1.005000	44.0	discard	switch to GeLU activation
-d4e5f6g	0.000000	0.0	crash	double model width (OOM)
+commit	val_bpb	final_loss	memory_gb	status	description
+a1b2c3d	0.997900	3.214567	44.0	keep	baseline
+b2c3d4e	0.993200	3.189234	44.2	keep	increase LR to 0.04
+c3d4e5f	1.005000	3.245678	44.0	discard	switch to GeLU activation
+d4e5f6g	0.000000	0.000000	0.0	crash	double model width (OOM)
 ```
+
+**CRITICAL: results.tsv is append-only.** NEVER modify or delete previous rows. Each experiment gets exactly one row appended when it finishes. Previous "keep" entries stay as "keep" even when a later experiment beats them — they represent the history of what was tried and what worked at the time. The `status` field records the decision made at the time of that experiment:
+- `keep` = this experiment improved on the previous best *at the time it ran*
+- `discard` = this experiment did NOT improve on the previous best *at the time it ran*
+- `crash` = this experiment crashed before producing a val_bpb
 
 ## The experiment loop
 
@@ -97,11 +113,18 @@ LOOP FOREVER:
 2. Tune `train.py` with an experimental idea by directly hacking the code.
 3. git commit
 4. Run the experiment: `python train.py > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
-5. Read out the results: `grep "^val_bpb:\|^peak_vram_mb:" run.log`
+5. Read out the results: `grep "^val_bpb:\|^peak_vram_mb:" run.log` and also capture the final loss value from the last training step line in run.log
 6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
-7. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
+7a. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
+7b. **Check for user instructions**: After each experiment, check if `.symphonic-autoresearch-user-instructions.md` exists in the workspace. If it does:
+    - Read it — it contains instructions from the human operator
+    - Follow the instructions (they may redirect your next experiment, change strategy, etc.)
+    - Delete the file after reading: `rm .symphonic-autoresearch-user-instructions.md`
+    - Continue the experiment loop incorporating the new instructions
 8. If val_bpb improved (lower), you "advance" the branch, keeping the git commit
 9. If val_bpb is equal or worse, you git reset back to where you started
+
+**Important**: When you "discard" an experiment, that means you git reset and log it as "discard" in results.tsv. Do NOT go back and change previous "keep" entries to "discard". The status reflects the decision at the time of each experiment.
 
 The idea is that you are a completely autonomous researcher trying things out. If they work, keep. If they don't, discard. And you're advancing the branch so that you can iterate. If you feel like you're getting stuck in some way, you can rewind but you should probably do this very very sparingly (if ever).
 
@@ -109,11 +132,11 @@ The idea is that you are a completely autonomous researcher trying things out. I
 
 **Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status in the tsv, and move on.
 
-**NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — search the web for recent techniques, re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
+**NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — search the web for recent techniques, read papers referenced in the code, re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
 
 ## Research via web search
 
-You have access to a SearXNG instance at **http://192.168.1.36:4000**. Use `webfetch` to search it. This is a powerful tool — use it proactively, not just when you're stuck.
+You have access to a SearXNG instance at **{{SEARXNG_ENDPOINT}}**. Use `webfetch` to search it. This is a powerful tool — use it proactively, not just when you're stuck.
 
 **When to search:**
 - Before trying a new technique — search for recent results, best practices, or known pitfalls (e.g. "efficient transformer training techniques 2025", "muon optimizer improvements")
@@ -123,7 +146,7 @@ You have access to a SearXNG instance at **http://192.168.1.36:4000**. Use `webf
 
 **How to search:**
 ```
-webfetch http://192.168.1.36:4000/search?q=YOUR+QUERY+HERE&format=json
+webfetch {{SEARXNG_ENDPOINT}}/search?q=YOUR+QUERY+HERE&format=json
 ```
 
 The JSON response contains a list of results with titles, URLs, and snippets. If a result looks promising, `webfetch` the URL directly to read the full content (paper abstracts, blog posts, GitHub READMEs, etc.).

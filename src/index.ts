@@ -15,9 +15,9 @@ import type { Server } from "node:http";
 const program = new Command();
 
 program
-  .name("symphony")
+  .name("symphonic-autoresearch")
   .description(
-    "A long-running automation service that orchestrates coding agents through issue trackers or autonomous research loops",
+    "A long-running automation service for autonomous ML research experiments",
   )
   .version("1.0.0")
   .argument("[workflow-path]", "Path to WORKFLOW.md", "./WORKFLOW.md")
@@ -88,7 +88,7 @@ program
 
       // Start orchestrator
       await orchestrator.start();
-      logger.info({ mode: config.mode }, "Symphony started successfully");
+      logger.info({ mode: config.mode }, "Symphonic Autoresearch started successfully");
 
       // Graceful shutdown
       const shutdown = async () => {

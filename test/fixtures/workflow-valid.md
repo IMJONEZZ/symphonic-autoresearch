@@ -25,7 +25,7 @@ agent:
 
 opencode:
   command: opencode
-  model: lmstudio/minimax-m2.5-mlx@4bit
+  model: your-model-here
   run_timeout_ms: 1800000
 ---
 

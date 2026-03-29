@@ -7,8 +7,12 @@ import type { ServiceConfig } from "../types/workflow.js";
 import { WorkspaceManager } from "../workspace/workspace-manager.js";
 import { OpenCodeClient } from "./opencode-client.js";
 import { buildTurnPrompt } from "../prompt/renderer.js";
+import { buildAutoresearchPrompt } from "./context-builder.js";
 import type { TrackerClient } from "../tracker/tracker-client.js";
 import type { Logger } from "../logging/logger.js";
+import { createEmbeddingClient } from "../knowledge/embedding-client.js";
+import { KnowledgeStore } from "../knowledge/knowledge-store.js";
+import { SearchInterceptor } from "../knowledge/search-interceptor.js";
 
 export interface WorkerResult {
   success: boolean;
@@ -153,6 +157,34 @@ export async function runAutoresearch(
   // 5. Initialize git repo if needed
   await workspaceManager.runBeforeRun(workspacePath);
 
+  // 6. Initialize knowledge store (Phase 3)
+  let knowledgeStore: KnowledgeStore | null = null;
+  let searchInterceptor: SearchInterceptor | null = null;
+
+  if (arConfig.knowledge_enabled && arConfig.embedding_endpoint && arConfig.embedding_model) {
+    try {
+      const embeddingClient = createEmbeddingClient(
+        arConfig.embedding_endpoint,
+        arConfig.embedding_model,
+      );
+      knowledgeStore = new KnowledgeStore(
+        path.join(workspacePath, ".symphonic-autoresearch-knowledge"),
+        embeddingClient,
+      );
+      await knowledgeStore.initialize();
+      
+      searchInterceptor = new SearchInterceptor((content, source) => {
+        if (knowledgeStore) {
+          knowledgeStore.addDocument(content, source).catch(() => {});
+        }
+      });
+      
+      log.info("Knowledge store initialized");
+    } catch (err) {
+      log.warn({ err }, "Failed to initialize knowledge store, continuing without persistence");
+    }
+  }
+
   // 7. Read program.md as the prompt
   const programMdPath = path.resolve(arConfig.program_md);
   if (!fs.existsSync(programMdPath)) {
@@ -162,6 +194,7 @@ export async function runAutoresearch(
 
   // 8. Run with crash-restart loop
   let crashCount = 0;
+  let lastCrashError: string | undefined;
   const maxRestarts = arConfig.max_crash_restarts;
 
   while (!signal.aborted) {
@@ -177,10 +210,43 @@ export async function runAutoresearch(
       message: `Autoresearch run starting (tag=${arConfig.run_tag}, restarts=${crashCount})`,
     });
 
+    // Query knowledge store for relevant research notes
+    let knowledgeHits: string[] = [];
+    if (knowledgeStore) {
+      try {
+        knowledgeHits = await knowledgeStore.search(
+          "techniques to improve val_bpb transformer pretraining",
+          5,
+        );
+        if (knowledgeHits.length > 0) {
+          log.info({ hits: knowledgeHits.length }, "Found relevant knowledge entries");
+        }
+      } catch (err) {
+        log.warn({ err }, "Knowledge search failed, continuing without context");
+      }
+    }
+
+    const dynamicPrompt = buildAutoresearchPrompt({
+      programMd: programPrompt,
+      workspacePath,
+      crashCount,
+      lastCrashError,
+      knowledgeHits,
+      searxngEndpoint: arConfig.searxng_endpoint,
+    });
+
+    // Wrap onAgentUpdate to also intercept webfetch results
+    const wrappedOnAgentUpdate = (event: AgentEvent) => {
+      if (searchInterceptor) {
+        searchInterceptor.processEvent(event);
+      }
+      onAgentUpdate(event);
+    };
+
     const result = await openCodeClient.runSession(
       workspacePath,
-      programPrompt,
-      onAgentUpdate,
+      dynamicPrompt,
+      wrappedOnAgentUpdate,
       signal,
     );
 
@@ -193,11 +259,13 @@ export async function runAutoresearch(
       // OpenCode exited cleanly — it shouldn't for autoresearch (NEVER STOP)
       // Restart it
       log.info("OpenCode exited cleanly, restarting autoresearch loop");
+      lastCrashError = undefined;
       continue;
     }
 
     // Crash or error
     crashCount++;
+    lastCrashError = result.error;
     log.warn(
       { error: result.error, crash_count: crashCount, max_restarts: maxRestarts },
       "Autoresearch run crashed",

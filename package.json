@@ -1,11 +1,11 @@
 {
-  "name": "symphony",
+  "name": "symphonic-autoresearch",
   "version": "1.0.0",
-  "description": "A long-running automation service that orchestrates coding agents through issue trackers",
+  "description": "A long-running automation service that orchestrates AI agents for autonomous ML research",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "symphony": "dist/index.js"
+    "symphonic-autoresearch": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -20,6 +20,7 @@
     "express": "^4.21.0",
     "liquidjs": "^10.20.0",
     "pino": "^9.6.0",
+    "usearch": "^2.21.4",
     "yaml": "^2.7.0"
   },
   "devDependencies": {

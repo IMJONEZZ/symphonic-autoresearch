@@ -53,6 +53,10 @@ export interface AutoresearchConfig {
   run_tag: string;
   restart_on_crash: boolean;
   max_crash_restarts: number;
+  knowledge_enabled: boolean;
+  embedding_endpoint: string | null;
+  embedding_model: string;
+  searxng_endpoint: string | null;
 }
 
 export interface ServerConfig {

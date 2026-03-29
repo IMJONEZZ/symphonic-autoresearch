@@ -1,4 +1,5 @@
-import type { OrchestratorSnapshot } from "../orchestrator/orchestrator.js";
+import type { OrchestratorSnapshot, TrainingMetrics } from "../orchestrator/orchestrator.js";
+import type { HardwareMetrics } from "../monitor/hardware-monitor.js";
 
 /**
  * Generate an HTML dashboard from orchestrator snapshot.
@@ -26,6 +27,22 @@ export function renderDashboard(snapshot: OrchestratorSnapshot): string {
     .stats-row { display: flex; gap: 0.5rem; flex-wrap: wrap; flex-shrink: 0; }
     .training-row { flex-shrink: 0; }
     .content-area { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 0.6rem; min-height: 0; }
+
+    /* Mobile: single column, scrollable, reordered panels */
+    @media (max-width: 768px) {
+      body { overflow: auto; height: auto; min-height: 100vh; }
+      .dashboard { height: auto; min-height: 100vh; }
+      .content-area { display: flex; flex-direction: column; gap: 0.6rem; }
+      .content-area .panel { min-height: 280px; }
+      .panel-chart { order: 1; }
+      .panel-results { order: 2; }
+      .panel-trace { order: 3; }
+      .content-area .instruction-row { order: 4; }
+      .panel-trace { grid-row: unset !important; }
+      .header-row { flex-wrap: wrap; }
+      .stat { min-width: 70px; }
+      .stat-value { font-size: 1rem; }
+    }
 
     /* Header */
     h1 { color: #fbf1c7; font-size: 1.3rem; }
@@ -74,6 +91,15 @@ export function renderDashboard(snapshot: OrchestratorSnapshot): string {
     .training-metric .highlight { color: #fabd2f; }
     .progress-bar { flex: 1; height: 5px; background: #3c3836; border-radius: 3px; overflow: hidden; max-width: 180px; min-width: 60px; }
     .progress-fill { height: 100%; background: linear-gradient(90deg, #b8bb26, #fabd2f); border-radius: 3px; transition: width 0.5s ease; }
+
+    /* Hardware bar */
+    .hardware-row { flex-shrink: 0; }
+    .hardware-bar { display: flex; gap: 0.6rem; align-items: center; background: #282828; border: 1px solid #3c3836; border-radius: 5px; padding: 0.35rem 0.6rem; flex-wrap: wrap; }
+    .hw-metric { font-size: 0.7rem; color: #a89984; white-space: nowrap; }
+    .hw-metric span { color: #ebdbb2; font-weight: bold; }
+    .hw-green { color: #b8bb26 !important; }
+    .hw-yellow { color: #fabd2f !important; }
+    .hw-red { color: #fb4934 !important; }
 
     /* Traces / Event log */
     .trace-list { font-size: 0.72rem; }
@@ -125,6 +151,19 @@ export function renderDashboard(snapshot: OrchestratorSnapshot): string {
     /* Linear mode */
     a { color: #83a598; }
     .message-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #bdae93; }
+
+    /* Instruction input */
+    .instruction-row { flex-shrink: 0; }
+    .instruction-bar { display: flex; gap: 0.5rem; align-items: flex-start; background: #282828; border: 1px solid #3c3836; border-radius: 5px; padding: 0.4rem 0.6rem; }
+    #instruction-input { flex: 1; background: #1d2021; color: #ebdbb2; border: 1px solid #504945; border-radius: 3px; padding: 0.3rem 0.5rem; font-family: inherit; font-size: 0.72rem; resize: vertical; min-height: 28px; max-height: 80px; }
+    #instruction-input:focus { outline: none; border-color: #83a598; }
+    .instruction-controls { display: flex; flex-direction: column; gap: 0.3rem; align-items: center; }
+    .instruction-btn { background: #3c3836; color: #b8bb26; border: 1px solid #504945; border-radius: 3px; padding: 0.25rem 0.75rem; font-family: inherit; font-size: 0.7rem; cursor: pointer; white-space: nowrap; }
+    .instruction-btn:hover { background: #504945; }
+    .instruction-btn:disabled { color: #665c54; cursor: not-allowed; }
+    .instruction-status { font-size: 0.6rem; color: #928374; white-space: nowrap; }
+    .instruction-status.queued { color: #fabd2f; }
+    .instruction-status.delivered { color: #b8bb26; }
   </style>
 </head>
 <body>
@@ -153,6 +192,7 @@ function renderAutoresearchBody(snapshot: OrchestratorSnapshot): string {
   const uptime = formatDuration(ar.uptime_seconds);
   const training = snapshot.training;
   const trainingBar = training ? renderTrainingBar(training) : `<div class="training-bar"><span class="training-metric" style="color:#665c54;">Waiting for training data...</span></div>`;
+  const hardwareBar = renderHardwareBar(snapshot.hardware);
 
   return `
     <div class="dashboard">
@@ -192,24 +232,26 @@ function renderAutoresearchBody(snapshot: OrchestratorSnapshot): string {
         </div>
       </div>
 
+      <div class="hardware-row" id="hardware-bar">${hardwareBar}</div>
+
       <div class="training-row" id="training-bar">${trainingBar}</div>
 
       <div class="content-area">
-        <!-- Top-left: Loss Curve -->
-        <div class="panel">
+        <!-- Top-left: Experiment Progress -->
+        <div class="panel panel-chart">
           <div class="panel-header">
-            <h2>Loss Curve</h2>
-            <span class="badge" id="loss-count">0 pts</span>
+            <h2>Experiment Progress</h2>
+            <span class="badge" id="exp-count">0 experiments</span>
           </div>
           <div class="panel-body padded">
             <div class="chart-container" id="chart-container">
-              <canvas id="loss-chart"></canvas>
+              <canvas id="exp-chart"></canvas>
             </div>
           </div>
         </div>
 
-        <!-- Top-right: Agent Trace (spans both rows) -->
-        <div class="panel" style="grid-row: 1 / 3;">
+        <!-- Top-right: Agent Trace (spans both rows on desktop) -->
+        <div class="panel panel-trace" style="grid-row: 1 / 3;">
           <div class="panel-header">
             <h2>Agent Trace</h2>
             <span class="badge" id="trace-count">${snapshot.event_log.length}</span>
@@ -223,33 +265,43 @@ function renderAutoresearchBody(snapshot: OrchestratorSnapshot): string {
         </div>
 
         <!-- Bottom-left: Experiment Results -->
-        <div class="panel">
+        <div class="panel panel-results">
           <div class="panel-header">
             <h2>Experiment Results</h2>
             <span class="badge" id="results-count">0</span>
           </div>
           <div class="panel-body">
             <table id="results-table">
-              <thead>
-                <tr>
-                  <th>Commit</th>
-                  <th>val_bpb</th>
-                  <th>VRAM</th>
-                  <th>Status</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody id="results-body">
-                <tr><td colspan="5" style="text-align:center;color:#665c54;padding:0.75rem;">Loading...</td></tr>
-              </tbody>
+             <thead>
+                 <tr>
+                   <th>Commit</th>
+                   <th>val_bpb</th>
+                   <th>Final Loss</th>
+                   <th title="CUDA allocated only (torch.cuda.max_memory_allocated). See RAM in hardware bar for actual system memory usage.">VRAM (CUDA)</th>
+                   <th>Status</th>
+                   <th>Description</th>
+                 </tr>
+               </thead>
+               <tbody id="results-body">
+                 <tr><td colspan="6" style="text-align:center;color:#665c54;padding:0.75rem;">Loading...</td></tr>
+               </tbody>
             </table>
           </div>
         </div>
-      </div>
-    </div>`;
+
+        <div class="instruction-row">
+          <div class="instruction-bar">
+            <textarea id="instruction-input" placeholder="Give instructions to the agent (delivered between experiments)..." rows="2"></textarea>
+            <div class="instruction-controls">
+              <button id="instruction-send" class="instruction-btn">Send</button>
+              <span id="instruction-status" class="instruction-status"></span>
+            </div>
+          </div>
+        </div>
+      </div>`;
 }
 
-function renderTrainingBar(t: import("../orchestrator/orchestrator.js").TrainingMetrics): string {
+function renderTrainingBar(t: TrainingMetrics): string {
   const pct = t.progress_pct ?? 0;
   const parts: string[] = [];
   if (t.step !== undefined) parts.push(`<span class="training-metric">Step <span>${t.step}</span></span>`);
@@ -266,6 +318,36 @@ function renderTrainingBar(t: import("../orchestrator/orchestrator.js").Training
     <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
     <span class="training-metric"><span>${pct.toFixed(1)}%</span></span>
   </div>`;
+}
+
+function renderHardwareBar(hw: HardwareMetrics | null): string {
+  if (!hw) {
+    return `<div class="hardware-bar"><span class="hw-metric" style="color:#665c54;">Hardware monitoring unavailable</span></div>`;
+  }
+
+  const parts: string[] = [];
+
+  // GPU utilization with color coding
+  if (hw.gpu_utilization_pct !== null) {
+    const utilClass = hw.gpu_utilization_pct >= 95 ? "hw-red" : hw.gpu_utilization_pct >= 80 ? "hw-yellow" : "hw-green";
+    parts.push(`<span class="hw-metric">GPU <span class="${utilClass}">${hw.gpu_utilization_pct.toFixed(0)}%</span></span>`);
+  }
+
+  // GPU temperature with color coding
+  if (hw.gpu_temperature_c !== null) {
+    const tempClass = hw.gpu_temperature_c >= 85 ? "hw-red" : hw.gpu_temperature_c >= 75 ? "hw-yellow" : "hw-green";
+    parts.push(`<span class="hw-metric">Temp <span class="${tempClass}">${hw.gpu_temperature_c.toFixed(0)}°C</span></span>`);
+  }
+
+  // Power draw
+  if (hw.power_draw_w !== null) {
+    parts.push(`<span class="hw-metric">Power <span>${hw.power_draw_w.toFixed(0)}W</span></span>`);
+  }
+
+  // Memory available/total
+  parts.push(`<span class="hw-metric">RAM <span>${hw.mem_available_gb.toFixed(1)}/${hw.mem_total_gb.toFixed(1)}GB</span></span>`);
+
+  return `<div class="hardware-bar">${parts.join("")}</div>`;
 }
 
 function renderEventLog(events: Array<{ timestamp: string; type: string; message: string; raw?: unknown }>): string {
@@ -310,13 +392,11 @@ function extractDisplayMsg(message: string): string {
 }
 
 function autoresearchScript(snapshot: OrchestratorSnapshot): string {
-  const lossHistoryJson = JSON.stringify(snapshot.loss_history ?? []);
-
   return `<script>
 (function() {
   let autoScroll = true;
   let traceCount = ${snapshot.event_log.length};
-  let lossData = ${lossHistoryJson};
+  let expResults = [];
 
   // --- SSE ---
   function connectSSE() {
@@ -429,8 +509,8 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
   const tc = document.getElementById('trace-container');
   tc.scrollTop = tc.scrollHeight;
 
-  // --- Loss Chart ---
-  const canvas = document.getElementById('loss-chart');
+  // --- Experiment Progress Chart ---
+  const canvas = document.getElementById('exp-chart');
   const ctx = canvas.getContext('2d');
 
   function drawChart() {
@@ -445,62 +525,130 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     canvas.style.height = h + 'px';
     ctx.clearRect(0, 0, w, h);
 
-    if (lossData.length < 2) {
+    // Filter to experiments with valid val_bpb (exclude crashes with 0)
+    const valid = expResults.filter(r => r.val_bpb > 0);
+    if (valid.length < 1) {
       ctx.fillStyle = '#665c54'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
-      ctx.fillText('Waiting for training data...', w/2, h/2);
+      ctx.fillText('Waiting for experiment results...', w/2, h/2);
       return;
     }
 
-    const pad = {top:15, right:12, bottom:25, left:50};
+    const pad = {top:20, right:15, bottom:28, left:55};
     const cw = w - pad.left - pad.right;
     const ch = h - pad.top - pad.bottom;
 
-    const steps = lossData.map(d=>d.step), losses = lossData.map(d=>d.loss);
-    const minStep = Math.min(...steps), maxStep = Math.max(...steps);
-    const minLoss = Math.min(...losses), maxLoss = Math.max(...losses);
-    const lr = maxLoss - minLoss || 0.1, sr = maxStep - minStep || 1;
+    // Axis ranges
+    const bpbs = valid.map(r => r.val_bpb);
+    const maxBpb = Math.max(...bpbs);
+    const minBpb = Math.min(...bpbs);
+    const bpbMargin = (maxBpb - minBpb) * 0.08 || 0.005;
+    const yMax = maxBpb + bpbMargin;
+    const yMin = minBpb - bpbMargin;
+    const yr = yMax - yMin;
+    const xMax = expResults.length;
+    const xr = xMax || 1;
 
     // Grid
     ctx.strokeStyle = '#3c3836'; ctx.lineWidth = 0.5;
     for (let i=0;i<=4;i++){const y=pad.top+ch*i/4;ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();}
 
-    // Y labels
+    // Y labels (val_bpb)
     ctx.fillStyle = '#928374'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
-    for (let i=0;i<=4;i++){const v=maxLoss-lr*i/4;ctx.fillText(v.toFixed(3),pad.left-4,pad.top+ch*i/4+3);}
+    for (let i=0;i<=4;i++){const v=yMax-yr*i/4;ctx.fillText(v.toFixed(4),pad.left-4,pad.top+ch*i/4+3);}
 
-    // X labels
+    // X labels (experiment #)
     ctx.textAlign = 'center';
-    for (let i=0;i<=4;i++){const v=Math.round(minStep+sr*i/4);ctx.fillText(String(v),pad.left+cw*i/4,h-6);}
+    const xTicks = Math.min(xMax, 5);
+    for (let i=0;i<=xTicks;i++){const v=Math.round(xMax*i/xTicks);ctx.fillText(String(v),pad.left+cw*(v/xr),h-8);}
 
-    // Loss line
-    ctx.beginPath(); ctx.strokeStyle = '#fabd2f'; ctx.lineWidth = 1.5;
-    for (let i=0;i<lossData.length;i++){
-      const x=pad.left+((lossData[i].step-minStep)/sr)*cw;
-      const y=pad.top+((maxLoss-lossData[i].loss)/lr)*ch;
-      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    // X axis label
+    ctx.fillStyle = '#665c54'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('experiment #', pad.left + cw/2, h - 1);
+
+    // Goal line at 0.977
+    const goalY = pad.top + ((yMax - 0.977) / yr) * ch;
+    if (goalY > pad.top && goalY < pad.top + ch) {
+      ctx.strokeStyle = '#b8bb26'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(pad.left, goalY); ctx.lineTo(w - pad.right, goalY); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#b8bb26'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
+      ctx.fillText('goal: 0.977', pad.left + 3, goalY - 4);
     }
-    ctx.stroke();
 
-    // Moving avg
-    if (lossData.length > 20) {
-      ctx.beginPath(); ctx.strokeStyle = '#fb4934'; ctx.lineWidth = 2;
-      const ws = Math.min(20, Math.floor(lossData.length/4));
-      for (let i=ws;i<lossData.length;i++){
-        let s=0;for(let j=i-ws;j<i;j++)s+=lossData[j].loss;
-        const a=s/ws;
-        const x=pad.left+((lossData[i].step-minStep)/sr)*cw;
-        const y=pad.top+((maxLoss-a)/lr)*ch;
-        i===ws?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    // Running best line (only from kept experiments)
+    let runBest = Infinity;
+    const bestLine = [];
+    for (let i = 0; i < expResults.length; i++) {
+      const r = expResults[i];
+      if (r.status === 'keep' && r.val_bpb > 0 && r.val_bpb < runBest) {
+        runBest = r.val_bpb;
+      }
+      if (runBest < Infinity) bestLine.push({x: i, y: runBest});
+    }
+    if (bestLine.length > 0) {
+      ctx.beginPath(); ctx.strokeStyle = '#fabd2f'; ctx.lineWidth = 2.5;
+      for (let i = 0; i < bestLine.length; i++) {
+        const x = pad.left + ((bestLine[i].x + 0.5) / xr) * cw;
+        const y = pad.top + ((yMax - bestLine[i].y) / yr) * ch;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }
       ctx.stroke();
     }
 
-    // Legend
-    ctx.fillStyle='#fabd2f';ctx.fillRect(w-pad.right-90,pad.top,10,2);
-    ctx.fillStyle='#928374';ctx.font='8px monospace';ctx.textAlign='left';ctx.fillText('loss',w-pad.right-76,pad.top+3);
-    if(lossData.length>20){ctx.fillStyle='#fb4934';ctx.fillRect(w-pad.right-90,pad.top+8,10,2);ctx.fillStyle='#928374';ctx.fillText('avg',w-pad.right-76,pad.top+11);}
+    // Scatter dots
+    const colors = {keep: '#b8bb26', discard: '#928374', crash: '#fb4934'};
+    const radii = {keep: 4, discard: 3, crash: 3.5};
+    for (let i = 0; i < expResults.length; i++) {
+      const r = expResults[i];
+      if (r.val_bpb <= 0) continue; // skip crashes with no metric
+      const x = pad.left + ((i + 0.5) / xr) * cw;
+      const y = pad.top + ((yMax - r.val_bpb) / yr) * ch;
+      const color = colors[r.status] || '#928374';
+      const radius = radii[r.status] || 3;
+      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+      if (r.status === 'keep') {
+        ctx.strokeStyle = '#b8bb26'; ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
 
-    document.getElementById('loss-count').textContent = lossData.length + ' pts';
+    // Crash markers (X at top of chart)
+    for (let i = 0; i < expResults.length; i++) {
+      const r = expResults[i];
+      if (r.status !== 'crash') continue;
+      const x = pad.left + ((i + 0.5) / xr) * cw;
+      const y = pad.top + 8;
+      ctx.strokeStyle = '#fb4934'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x-3, y-3); ctx.lineTo(x+3, y+3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x+3, y-3); ctx.lineTo(x-3, y+3); ctx.stroke();
+    }
+
+    // Legend
+    const lx = w - pad.right - 105;
+    const items = [
+      {color:'#b8bb26', label:'kept', shape:'circle'},
+      {color:'#928374', label:'discarded', shape:'circle'},
+      {color:'#fb4934', label:'crash', shape:'x'},
+      {color:'#fabd2f', label:'running best', shape:'line'},
+    ];
+    ctx.font = '8px monospace'; ctx.textAlign = 'left';
+    for (let i = 0; i < items.length; i++) {
+      const ly = pad.top + i * 11;
+      if (items[i].shape === 'circle') {
+        ctx.beginPath(); ctx.arc(lx + 4, ly, 3, 0, Math.PI * 2);
+        ctx.fillStyle = items[i].color; ctx.fill();
+      } else if (items[i].shape === 'x') {
+        ctx.strokeStyle = items[i].color; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(lx+1, ly-3); ctx.lineTo(lx+7, ly+3); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(lx+7, ly-3); ctx.lineTo(lx+1, ly+3); ctx.stroke();
+      } else {
+        ctx.fillStyle = items[i].color; ctx.fillRect(lx, ly - 1, 10, 2);
+      }
+      ctx.fillStyle = '#928374';
+      ctx.fillText(items[i].label, lx + 14, ly + 3);
+    }
+
+    document.getElementById('exp-count').textContent = expResults.length + ' experiments';
   }
 
   drawChart();
@@ -509,8 +657,8 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
   // --- Poll ---
   async function pollState() {
     try {
-      const [stateRes, trainingRes, resultsRes] = await Promise.all([
-        fetch('/api/v1/state'), fetch('/api/v1/training'), fetch('/api/v1/results')
+      const [stateRes, trainingRes, resultsRes, hardwareRes] = await Promise.all([
+        fetch('/api/v1/state'), fetch('/api/v1/training'), fetch('/api/v1/results'), fetch('/api/v1/hardware')
       ]);
       if (stateRes.ok) {
         const state = await stateRes.json();
@@ -521,10 +669,6 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
           document.getElementById('stat-tools').textContent = ar.tool_calls;
           document.getElementById('stat-crashes').textContent = ar.crash_count;
         }
-        if (state.loss_history && state.loss_history.length > lossData.length) {
-          lossData = state.loss_history;
-          drawChart();
-        }
         document.getElementById('updated-at').textContent = 'Updated ' + new Date(state.generated_at).toLocaleTimeString();
       }
       if (trainingRes.ok) {
@@ -533,7 +677,22 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
       }
       if (resultsRes.ok) {
         const results = await resultsRes.json();
-        if (Array.isArray(results)) updateResultsTable(results);
+        if (Array.isArray(results)) {
+          updateResultsTable(results);
+          if (results.length !== expResults.length) {
+            expResults = results;
+            drawChart();
+          }
+        }
+      }
+      if (hardwareRes.ok) {
+        const hw = await hardwareRes.json();
+        if (hw && hw.gpu_utilization_pct !== undefined) updateHardwareBar(hw);
+      }
+      const instrRes = await fetch('/api/v1/instruction');
+      if (instrRes.ok) {
+        const instrStatus = await instrRes.json();
+        updateInstructionStatus(instrStatus);
       }
     } catch {}
   }
@@ -555,6 +714,30 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
       +'<span class="training-metric"><span>'+pct.toFixed(1)+'%</span></span></div>';
   }
 
+  function updateHardwareBar(hw) {
+    const bar = document.getElementById('hardware-bar');
+    if (!hw || hw.status === 'unavailable') {
+      bar.innerHTML = '<div class="hardware-bar"><span class="hw-metric" style="color:#665c54;">Hardware monitoring unavailable</span></div>';
+      return;
+    }
+    let p = [];
+    if (hw.gpu_utilization_pct !== null) {
+      const u = hw.gpu_utilization_pct;
+      const cls = u >= 95 ? 'hw-red' : u >= 80 ? 'hw-yellow' : 'hw-green';
+      p.push('<span class="hw-metric">GPU <span class="'+cls+'">'+Math.round(u)+'%</span></span>');
+    }
+    if (hw.gpu_temperature_c !== null) {
+      const t = hw.gpu_temperature_c;
+      const cls = t >= 85 ? 'hw-red' : t >= 75 ? 'hw-yellow' : 'hw-green';
+      p.push('<span class="hw-metric">Temp <span class="'+cls+'">'+Math.round(t)+'°C</span></span>');
+    }
+    if (hw.power_draw_w !== null) {
+      p.push('<span class="hw-metric">Power <span>'+Math.round(hw.power_draw_w)+'W</span></span>');
+    }
+    p.push('<span class="hw-metric">RAM <span>'+(hw.mem_available_gb||0).toFixed(1)+'/'+(hw.mem_total_gb||0).toFixed(1)+'GB</span></span>');
+    bar.innerHTML = '<div class="hardware-bar">'+p.join('')+'</div>';
+  }
+
   function updateResultsTable(results) {
     const body = document.getElementById('results-body');
     document.getElementById('results-count').textContent = results.length;
@@ -562,11 +745,12 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     let best = Infinity;
     for (const r of results) if (r.status==='keep'&&r.val_bpb>0&&r.val_bpb<best) best=r.val_bpb;
     if (best<Infinity) document.getElementById('stat-bestbpb').textContent = best.toFixed(4);
-    if (!results.length) { body.innerHTML='<tr><td colspan="5" style="text-align:center;color:#665c54;padding:0.75rem;">No experiments yet</td></tr>'; return; }
+    if (!results.length) { body.innerHTML='<tr><td colspan="6" style="text-align:center;color:#665c54;padding:0.75rem;">No experiments yet</td></tr>'; return; }
     body.innerHTML = results.slice().reverse().map(r => {
       const sc='status-'+r.status, bc=(r.status==='keep'&&r.val_bpb===best)?'bpb-best':'bpb-val';
       return '<tr><td style="font-family:monospace;color:#83a598;">'+esc(r.commit)+'</td>'
         +'<td class="'+bc+'">'+(r.val_bpb>0?r.val_bpb.toFixed(6):'-')+'</td>'
+        +'<td class="bpb-val">'+(r.final_loss>0?r.final_loss.toFixed(4):'-')+'</td>'
         +'<td>'+(r.memory_gb>0?r.memory_gb.toFixed(1)+' GB':'-')+'</td>'
         +'<td class="'+sc+'">'+esc(r.status)+'</td>'
         +'<td style="color:#bdae93;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(r.description)+'</td></tr>';
@@ -577,6 +761,48 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     if(s<60) return s+'s';
     if(s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
     return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+  }
+
+  // --- User Instructions ---
+  document.getElementById('instruction-send').addEventListener('click', async () => {
+    const input = document.getElementById('instruction-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    const btn = document.getElementById('instruction-send');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/v1/instruction', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ message: msg })
+      });
+      if (res.ok) {
+        input.value = '';
+        updateInstructionStatus({ status: 'queued' });
+      }
+    } catch {}
+    btn.disabled = false;
+  });
+
+  document.getElementById('instruction-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      document.getElementById('instruction-send').click();
+    }
+  });
+
+  function updateInstructionStatus(s) {
+    const el = document.getElementById('instruction-status');
+    if (s.status === 'queued') {
+      el.textContent = 'Queued — will deliver after next agent step';
+      el.className = 'instruction-status queued';
+    } else if (s.status === 'delivered') {
+      el.textContent = 'Delivered ' + new Date(s.delivered_at).toLocaleTimeString();
+      el.className = 'instruction-status delivered';
+    } else {
+      el.textContent = '';
+      el.className = 'instruction-status';
+    }
   }
 
   setInterval(pollState, 5000);

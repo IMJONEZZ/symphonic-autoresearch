@@ -12,7 +12,7 @@ describe("WorkspaceManager", () => {
   let manager: WorkspaceManager;
 
   beforeEach(() => {
-    testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "symphony-test-"));
+    testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "symphonic-autoresearch-test-"));
     manager = new WorkspaceManager(
       () => testRoot,
       () => ({

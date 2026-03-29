@@ -15,6 +15,7 @@ import { WorkspaceManager } from "../workspace/workspace-manager.js";
 import { OpenCodeClient } from "../agent/opencode-client.js";
 import { runAgentAttempt, runAutoresearch, type WorkerResult } from "../agent/agent-runner.js";
 import type { Logger } from "../logging/logger.js";
+import { HardwareMonitor, type HardwareMetrics } from "../monitor/hardware-monitor.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { Response } from "express";
@@ -54,7 +55,16 @@ export class Orchestrator {
   private trainingPollTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Loss history for charting */
-  private lossHistory: Array<{ step: number; loss: number; timestamp: string }> = [];
+  private lossHistory: Array<{ step: number; loss: number; timestamp: string; experiment: number }> = [];
+  private currentExperiment = 0;
+
+  /** Hardware metrics monitor */
+  private hardwareMonitor: HardwareMonitor | null = null;
+
+  /** Instruction queue for user instructions to autoresearch agent */
+  private pendingInstruction: { message: string; submitted_at: string } | null = null;
+  private instructionStatus: "none" | "queued" | "delivered" = "none";
+  private instructionDeliveredAt: string | null = null;
 
   constructor(
     private configManager: ConfigManager,
@@ -77,6 +87,8 @@ export class Orchestrator {
         crash_restarts: 0,
       },
     };
+
+    this.hardwareMonitor = new HardwareMonitor();
 
     // Listen for config reloads
     configManager.on("reload", (newConfig: ServiceConfig) => {
@@ -126,6 +138,11 @@ export class Orchestrator {
     // Start training log poller
     this.startTrainingPoller();
 
+    // Start hardware monitor
+    if (this.hardwareMonitor) {
+      this.hardwareMonitor.start();
+    }
+
     const onUpdate = (event: AgentEvent) => {
       this.logger.info(
         { event: event.event, message: event.message },
@@ -149,6 +166,15 @@ export class Orchestrator {
         this.autoresearchStatus.crash_count++;
       }
 
+      // Deliver queued user instructions on step_finish or experiment completion
+      if (this.pendingInstruction) {
+        const isStepFinish = event.message?.startsWith("[step_finish]");
+        const isExperimentDone = event.message?.includes("val_bpb");
+        if (isStepFinish || isExperimentDone) {
+          this.deliverPendingInstruction();
+        }
+      }
+
       // Push to event log ring buffer and SSE
       this.pushEvent(event);
     };
@@ -164,6 +190,9 @@ export class Orchestrator {
 
     this.autoresearchStatus.active = false;
     this.stopTrainingPoller();
+    if (this.hardwareMonitor) {
+      this.hardwareMonitor.stop();
+    }
 
     if (!result.success) {
       this.autoresearchStatus.last_event = "stopped_error";
@@ -188,6 +217,11 @@ export class Orchestrator {
 
     // Stop training poller
     this.stopTrainingPoller();
+
+    // Stop hardware monitor
+    if (this.hardwareMonitor) {
+      this.hardwareMonitor.stop();
+    }
 
     // Cancel tick timer
     if (this.tickTimer) {
@@ -281,6 +315,8 @@ export class Orchestrator {
       event_log: this.eventLog.slice(-100),
       training: this.trainingMetrics,
       loss_history: this.lossHistory,
+      hardware: this.hardwareMonitor?.getMetrics() ?? null,
+      instruction: this.getInstructionStatus(),
     };
   }
 
@@ -303,19 +339,50 @@ export class Orchestrator {
     const config = this.configManager.getConfig();
     const tsvPath = path.join(config.workspace.root, "autoresearch", "results.tsv");
     try {
-      const content = fs.readFileSync(tsvPath, "utf-8");
-      const lines = content.trim().split("\n");
-      if (lines.length < 2) return [];
-      return lines.slice(1).map((line) => {
-        const [commit, val_bpb, memory_gb, status, ...descParts] = line.split("\t");
-        return {
-          commit: commit?.trim() ?? "",
-          val_bpb: parseFloat(val_bpb) || 0,
-          memory_gb: parseFloat(memory_gb) || 0,
-          status: (status?.trim() ?? "unknown") as "keep" | "discard" | "crash",
-          description: descParts.join("\t").trim(),
-        };
+      const raw = fs.readFileSync(tsvPath, "utf-8");
+      const lines = raw.trim().split("\n");
+      if (lines.length === 0) return [];
+
+      const headerLine = lines[0];
+      const isNewFormat = headerLine.includes("final_loss");
+
+      const results = lines.slice(1).filter((l) => l.trim()).map((line) => {
+        const parts = line.split("\t");
+        if (isNewFormat && parts.length >= 6) {
+          return {
+            commit: parts[0]?.trim() ?? "",
+            val_bpb: parseFloat(parts[1]) || 0,
+            final_loss: parseFloat(parts[2]) || 0,
+            memory_gb: parseFloat(parts[3]) || 0,
+            status: (parts[4]?.trim() ?? "unknown") as "keep" | "discard" | "crash",
+            description: parts.slice(5).join("\t").trim(),
+          };
+        } else {
+          return {
+            commit: parts[0]?.trim() ?? "",
+            val_bpb: parseFloat(parts[1]) || 0,
+            final_loss: 0,
+            memory_gb: parseFloat(parts[2]) || 0,
+            status: (parts[3]?.trim() ?? "unknown") as "keep" | "discard" | "crash",
+            description: parts.slice(4).join("\t").trim(),
+          };
+        }
       });
+
+      // Recompute status: the agent may retroactively edit old "keep" to "discard".
+      // Walk in order and mark any experiment that set a new best val_bpb as "keep".
+      let runningBest = Infinity;
+      for (const r of results) {
+        if (r.status === "crash" || r.val_bpb <= 0) continue;
+        if (r.val_bpb < runningBest) {
+          r.status = "keep";
+          runningBest = r.val_bpb;
+        } else {
+          r.status = "discard";
+        }
+      }
+
+      return results;
     } catch {
       return [];
     }
@@ -326,6 +393,53 @@ export class Orchestrator {
    */
   getTrainingMetrics(): TrainingMetrics | null {
     return this.trainingMetrics;
+  }
+
+  /**
+   * Get current hardware metrics.
+   */
+  getHardwareMetrics(): HardwareMetrics | null {
+    return this.hardwareMonitor?.getMetrics() ?? null;
+  }
+
+  /**
+   * Queue a user instruction for delivery to the autoresearch agent.
+   */
+  queueInstruction(message: string): void {
+    this.pendingInstruction = { message, submitted_at: new Date().toISOString() };
+    this.instructionStatus = "queued";
+    this.logger.info({ message: message.slice(0, 100) }, "User instruction queued");
+  }
+
+  /**
+   * Get the current status of any pending user instruction.
+   */
+  getInstructionStatus(): { status: string; message?: string; submitted_at?: string; delivered_at?: string } {
+    if (this.instructionStatus === "queued" && this.pendingInstruction) {
+      return { status: "queued", message: this.pendingInstruction.message, submitted_at: this.pendingInstruction.submitted_at };
+    }
+    if (this.instructionStatus === "delivered") {
+      return { status: "delivered", delivered_at: this.instructionDeliveredAt ?? undefined };
+    }
+    return { status: "none" };
+  }
+
+  /**
+   * Deliver a pending instruction to the autoresearch workspace.
+   */
+  private deliverPendingInstruction(): void {
+    if (!this.pendingInstruction) return;
+    const config = this.configManager.getConfig();
+    const filePath = path.join(config.workspace.root, "autoresearch", ".symphonic-autoresearch-user-instructions.md");
+    try {
+      fs.writeFileSync(filePath, this.pendingInstruction.message, "utf-8");
+      this.instructionStatus = "delivered";
+      this.instructionDeliveredAt = new Date().toISOString();
+      this.logger.info("User instruction delivered to workspace");
+      this.pendingInstruction = null;
+    } catch (err) {
+      this.logger.error({ err }, "Failed to write user instruction file");
+    }
   }
 
   /**
@@ -412,8 +526,12 @@ export class Orchestrator {
         // Append to loss history for charting (deduplicate by step)
         if (step !== undefined && loss !== undefined) {
           const last = this.lossHistory[this.lossHistory.length - 1];
-          if (!last || last.step !== step) {
-            this.lossHistory.push({ step, loss, timestamp: new Date().toISOString() });
+          // Detect new experiment when step resets to a lower value
+          if (last && step < last.step - 10) {
+            this.currentExperiment++;
+          }
+          if (!last || last.step !== step || last.experiment !== this.currentExperiment) {
+            this.lossHistory.push({ step, loss, timestamp: new Date().toISOString(), experiment: this.currentExperiment });
             // Keep last 2000 points
             if (this.lossHistory.length > 2000) {
               this.lossHistory = this.lossHistory.slice(-2000);
@@ -863,6 +981,7 @@ export interface TrainingMetrics {
 export interface ExperimentResult {
   commit: string;
   val_bpb: number;
+  final_loss: number;
   memory_gb: number;
   status: "keep" | "discard" | "crash";
   description: string;
@@ -898,7 +1017,9 @@ export interface OrchestratorSnapshot {
   autoresearch: AutoresearchStatus | null;
   event_log: EventLogEntry[];
   training: TrainingMetrics | null;
-  loss_history: Array<{ step: number; loss: number; timestamp: string }>;
+  loss_history: Array<{ step: number; loss: number; timestamp: string; experiment: number }>;
+  hardware: HardwareMetrics | null;
+  instruction: { status: string; message?: string; submitted_at?: string; delivered_at?: string };
 }
 
 export interface IssueDetail {

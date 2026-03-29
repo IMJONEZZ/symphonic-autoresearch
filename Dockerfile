@@ -3,18 +3,18 @@ FROM nvcr.io/nvidia/pytorch:26.01-py3
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Node.js (LTS) for symphony
+# Install Node.js (LTS) for symphonic-autoresearch
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install git (needed for autoresearch experiment tracking)
-RUN apt-get update && apt-get install -y git && \
+RUN apt-get update && apt-get install -y git curl && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Configure git defaults for autoresearch
-RUN git config --global user.email "symphony@autoresearch.local" && \
-    git config --global user.name "Symphony Autoresearch" && \
+RUN git config --global user.email "symphonic-autoresearch@autoresearch.local" && \
+    git config --global user.name "Symphonic Autoresearch" && \
     git config --global init.defaultBranch master
 
 # Install autoresearch Python dependencies (DO NOT install torch - container has it)
@@ -28,17 +28,17 @@ RUN pip install --no-cache-dir \
     "rustbpe>=0.1.0" \
     "tiktoken>=0.11.0"
 
-# Set up symphony
+# Set up symphonic-autoresearch
 WORKDIR /workspace
 
-# Copy symphony source and install deps
+# Copy symphonic-autoresearch source and install deps
 COPY package.json package-lock.json* ./
 RUN npm install --production=false
 
 COPY tsconfig.json vitest.config.ts ./
 COPY src/ src/
 
-# Build symphony
+# Build symphonic-autoresearch
 RUN npx tsc
 
 # Copy autoresearch files

@@ -37,7 +37,7 @@ export class OpenCodeClient {
     const config = this.getOpenCodeConfig();
 
     // Write the full prompt to a file and attach it via -f
-    const promptFile = path.join(workspacePath, ".symphony-prompt.md");
+    const promptFile = path.join(workspacePath, ".symphonic-autoresearch-prompt.md");
     fs.writeFileSync(promptFile, prompt, "utf-8");
 
     // Build the opencode run command
