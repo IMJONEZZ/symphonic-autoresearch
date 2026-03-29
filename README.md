@@ -85,7 +85,7 @@ docker compose up --build
 
 ### Access the Dashboard
 
-Open http://<ip-address-of-machine>:8080 to see:
+Open http://ip-address-of-machine:8080 to see:
 - Live training progress (loss, tok/s, MFU)
 - Experiment history from `results.tsv`
 - GPU metrics (temperature, VRAM, power draw)
