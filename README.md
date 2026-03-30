@@ -1,6 +1,6 @@
 # Symphonic Autoresearch
 
-Production infrastructure for autonomous ML research. Wraps [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) with crash recovery, a real-time web dashboard, optional persistent memory, and one-command Docker deployment.
+Production infrastructure for autonomous ML research, built on top of OpenAI's [Symphony](https://github.com/openai/symphony) orchestration framework. Wraps [Karpathy's autoresearch](https://github.com/karpathy/autoresearch) with crash recovery, a real-time web dashboard, optional persistent memory, and one-command Docker deployment.
 
 ## What This Does
 
@@ -167,10 +167,23 @@ symphonic-autoresearch/
 
 37 TypeScript files. ~5,100 lines of orchestration code.
 
+## Two Modes
+
+This project started as a general-purpose AI agent orchestrator built on OpenAI's [Symphony](https://github.com/openai/symphony). The original mode dispatches coding agents against Linear tickets (poll for issues, spin up workspaces, run agents, handle retries, reconcile state). Autoresearch was added as a second mode that reuses the same orchestrator core.
+
+Set the mode in `WORKFLOW.md`:
+
+- **`mode: linear`** (the original): Polls Linear for issues in configured states, dispatches agents to isolated git workspaces, handles multi-turn conversations, retries with backoff, reconciles tracker state, respects concurrency limits.
+- **`mode: autoresearch`**: Runs a single long-lived agent session against Karpathy's experiment loop, with crash recovery, a dashboard, training metrics, and optional knowledge persistence.
+
+Both modes share the orchestrator core, workspace manager, OpenCode client, config system, hardware monitor, and server infrastructure.
+
 ## License
 
 See [LICENSE](./LICENSE) for details. Free to use; revenue sharing applies for commercial deployments or replication.
 
 ## Credits
 
-Built on top of [Karpathy's autoresearch](https://github.com/karpathy/autoresearch). The core training loop and model architecture are his work. This project adds production infrastructure around it.
+- Orchestration architecture built on OpenAI's [Symphony](https://github.com/openai/symphony) framework.
+- Training loop and model architecture from [Karpathy's autoresearch](https://github.com/karpathy/autoresearch).
+- Agent execution through [OpenCode](https://opencode.ai).
