@@ -27,7 +27,7 @@ Currently running on an NVIDIA DGX Spark (Grace Blackwell, 128 GB unified memory
 | Best val_bpb | 0.9697 | 1.1818 |
 | Improvement | 2.8% | 15.3% |
 
-The baselines aren't directly comparable (different hardware, different starting points). Karpathy started from hand-tuned code on an H100 with 989 TFLOPS bf16. The Spark baseline was a cold start with SDPA attention. See the [blog post](./BLOG_POST_FINAL.md) for a detailed breakdown.
+The baselines aren't directly comparable (different hardware, different starting points). Karpathy started from hand-tuned code on an H100 with 989 TFLOPS bf16. The Spark baseline was a cold start with SDPA attention. See the [blog post](https://chrisbrousseau2.substack.com/p/i-left-an-ai-to-do-ml-research-it?r=stghb) for a detailed breakdown.
 
 The agent is still running. These numbers will be different by the time you read this.
 
