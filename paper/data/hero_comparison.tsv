@@ -1,0 +1,6 @@
+dimension	autoresearch	symphonic_autoresearch	research_significance
+Core experiment logic	Single-agent Python loop editing train.py under a five-minute budget	Same Python loop, vendored into a managed workspace	Controls for algorithmic drift and isolates the systems contribution
+Failure handling	Agent handles crashes inside the active terminal session	Host service detects failure and restarts with bounded backoff	Turns a fragile interactive loop into an unattended service
+Observability	Terminal output only	Dashboard, event trace, experiment table, and hardware telemetry	Makes long runs inspectable and steerable in real time
+Human control surface	Manual prompt edits and restarts	Asynchronous instruction injection between experiment steps	Supports corrective steering without tearing down the run
+Deployment model	Manual local execution	Dockerized service with workflow configuration and cache mounting	Improves repeatability and operational readiness

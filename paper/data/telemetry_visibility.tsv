@@ -1,0 +1,11 @@
+capability	autoresearch	symphonic_autoresearch
+Terminal summary output	1	1
+Tracked experiment table	0	1
+Live step/loss trace	0	1
+VRAM parsing	0	1
+GPU utilization	0	1
+GPU temperature	0	1
+Power draw	0	1
+System RAM	0	1
+Agent event trace	0	1
+Async human instruction channel	0	1

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1450" height="400" viewBox="0 0 1450 400">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#D6DCE5" flood-opacity="0.75"/>
+    </filter>
+    <marker id="arrowhead" markerWidth="7" markerHeight="7" refX="6.2" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L7,3.5 L0,7 z" fill="#B87866"/>
+    </marker>
+  </defs>
+
+  <rect width="100%" height="100%" fill="white"/>
+  <g filter="url(#shadow)">
+<rect x="35" y="112" width="260" height="132" rx="40" ry="40" fill="#DDE9F8" stroke="#1C2430" stroke-width="3"/>
+<text x="79" y="158" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">1. Validate</text>
+<text x="79" y="184" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">workflow</text>
+<text x="79" y="224" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">Read WORKFLOW.md,</text>
+<text x="79" y="244" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">resolve paths, check</text>
+<text x="79" y="264" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">environment</text>
+</g>
+  <g filter="url(#shadow)">
+<rect x="330" y="112" width="295" height="132" rx="40" ry="40" fill="#DEEFD9" stroke="#1C2430" stroke-width="3"/>
+<text x="374" y="158" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">2. Prepare</text>
+<text x="374" y="184" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">workspace</text>
+<text x="374" y="224" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">Create or reuse workspace;</text>
+<text x="374" y="244" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">copy preserved Python core</text>
+</g>
+  <g filter="url(#shadow)">
+<rect x="665" y="112" width="320" height="132" rx="40" ry="40" fill="#F4E8A6" stroke="#1C2430" stroke-width="3"/>
+<text x="709" y="158" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">3. Launch agent</text>
+<text x="709" y="184" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">session</text>
+<text x="709" y="224" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">Start OpenCode with dynamic</text>
+<text x="709" y="244" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">prompt and run budget</text>
+</g>
+  <g filter="url(#shadow)">
+<rect x="1025" y="112" width="300" height="132" rx="40" ry="40" fill="#FACB9E" stroke="#1C2430" stroke-width="3"/>
+<text x="1069" y="158" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">4. Parse and</text>
+<text x="1069" y="184" font-family="STIX Two Text, Times New Roman, serif" font-size="22" font-weight="700" fill="#1C2430">decide</text>
+<text x="1069" y="224" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">Parse run.log, update traces,</text>
+<text x="1069" y="244" font-family="STIX Two Text, Times New Roman, serif" font-size="15" font-weight="500" fill="#1C2430">append results, continue</text>
+</g>
+
+  <g filter="url(#shadow)">
+<rect x="805" y="18" width="275" height="92" rx="40" ry="40" fill="#D7EAFB" stroke="#1C2430" stroke-width="3"/>
+<text x="849" y="64" font-family="STIX Two Text, Times New Roman, serif" font-size="19" font-weight="700" fill="#1C2430">Human guidance</text>
+<text x="849" y="99" font-family="STIX Two Text, Times New Roman, serif" font-size="13" font-weight="500" fill="#1C2430">Queue operator instructions</text>
+<text x="849" y="117" font-family="STIX Two Text, Times New Roman, serif" font-size="13" font-weight="500" fill="#1C2430">between experiments</text>
+</g>
+  <g filter="url(#shadow)">
+<rect x="1120" y="18" width="260" height="92" rx="40" ry="40" fill="#DDF0D9" stroke="#1C2430" stroke-width="3"/>
+<text x="1164" y="64" font-family="STIX Two Text, Times New Roman, serif" font-size="19" font-weight="700" fill="#1C2430">Live state</text>
+<text x="1164" y="99" font-family="STIX Two Text, Times New Roman, serif" font-size="13" font-weight="500" fill="#1C2430">Dashboards, traces, and</text>
+<text x="1164" y="117" font-family="STIX Two Text, Times New Roman, serif" font-size="13" font-weight="500" fill="#1C2430">metrics remain visible</text>
+</g>
+  <g filter="url(#shadow)">
+<rect x="340" y="258" width="400" height="118" rx="40" ry="40" fill="#FFFDFC" stroke="#1C2430" stroke-width="3"/>
+<text x="384" y="304" font-family="STIX Two Text, Times New Roman, serif" font-size="21" font-weight="700" fill="#1C2430">Failure recovery</text>
+<text x="384" y="341" font-family="STIX Two Text, Times New Roman, serif" font-size="14" font-weight="500" fill="#1C2430">If the session exits or</text>
+<text x="384" y="360" font-family="STIX Two Text, Times New Roman, serif" font-size="14" font-weight="500" fill="#1C2430">stalls,</text>
+<text x="384" y="379" font-family="STIX Two Text, Times New Roman, serif" font-size="14" font-weight="500" fill="#1C2430">retry with bounded backoff</text>
+<text x="384" y="398" font-family="STIX Two Text, Times New Roman, serif" font-size="14" font-weight="500" fill="#1C2430">and preserved context</text>
+</g>
+
+  <path d="M295 178 C308 178, 318 178, 330 178" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+  <path d="M625 178 C638 178, 650 178, 665 178" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+  <path d="M985 178 C998 178, 1010 178, 1025 178" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+  <path d="M942 110 C942 104, 942 100, 942 96" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+  <path d="M1220 110 C1208 124, 1185 137, 1150 152" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+  <path d="M825 244 C825 284, 812 315, 740 334" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+  <path d="M1260 244 C1260 320, 1030 344, 740 344" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+  <path d="M540 258 C540 246, 540 240, 540 234" fill="none" stroke="#B87866" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowhead)"/>
+</svg>

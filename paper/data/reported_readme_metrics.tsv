@@ -1,0 +1,7 @@
+metric	karpathy_h100	symphonic_dgx_spark
+Experiments	126	52
+Kept improvements	23	22
+Crashes	not reported	1 (recovered)
+Baseline val_bpb	0.9979	1.3944
+Best val_bpb	0.9697	1.1818
+Improvement	2.8%	15.3%

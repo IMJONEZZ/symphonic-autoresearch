@@ -1,0 +1,79 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{ref_automl,ref_agentlab,ref_aiscientist,ref_aiscientist_v2,ref_sweagent}
+\citation{ref_hidden_debt,ref_ml_test_score,ref_mlflow}
+\citation{ref_bouthillier}
+\citation{ref_automl,ref_agentlab,ref_aiscientist}
+\citation{ref_autoresearch,ref_nanochat}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {II}Problem Framing and Audit Methodology}{1}{section.2}\protected@file@percent }
+\citation{ref_ml_test_score}
+\citation{ref_bouthillier,ref_mlflow}
+\citation{ref_autoresearch}
+\citation{ref_nanochat}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}Continuity}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Inspectable State}{2}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Steerable Control}{2}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-D}}Auditable Artifacts}{2}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-E}}Commit-Pinned Audit Methodology}{2}{subsection.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {III}From Minimal Loop to Managed Service}{2}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Baseline Loop}{2}{subsection.3.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Compact audit proof for the preserved Python core}}{2}{table.1}\protected@file@percent }
+\newlabel{tab:core-audit}{{I}{2}{Compact audit proof for the preserved Python core}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Contribution Boundary}{2}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Repository-Wide Comparison}{2}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {IV}System Overview}{2}{section.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces High-level comparison of the baseline loop and the Symphonic control plane. The table emphasizes why each addition matters for autonomous research rather than merely listing features.}}{3}{table.2}\protected@file@percent }
+\newlabel{tab:hero-comparison}{{II}{3}{High-level comparison of the baseline loop and the Symphonic control plane. The table emphasizes why each addition matters for autonomous research rather than merely listing features}{table.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Crash Recovery as a First-Class Systems Responsibility}{3}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Observability as Part of the Product, Not an Afterthought}{3}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}Steerability Without Reset}{3}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {V}Mechanisms and Hypotheses}{3}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Verified Mechanisms}{3}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Plausible Causal Pathways}{3}{subsection.5.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Architecture comparison. Symphonic keeps the Python experiment core intact while moving reliability, visibility, persistence, and operator control into a separate systems layer. This separation is the paper's main contribution boundary.}}{4}{figure.1}\protected@file@percent }
+\newlabel{fig:arch}{{1}{4}{Architecture comparison. Symphonic keeps the Python experiment core intact while moving reliability, visibility, persistence, and operator control into a separate systems layer. This separation is the paper's main contribution boundary}{figure.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Limits of Causal Interpretation}{4}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Code-Grounded Operational Comparison}{4}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-A}}Live Observability and Control Surfaces}{4}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-B}}Repository-Reported Snapshot}{4}{subsection.6.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Lifecycle of a Symphonic run. The learning loop still operates through the same Python files, but the surrounding service now owns restart, event streaming, metrics extraction, and the human intervention pathway.}}{5}{figure.2}\protected@file@percent }
+\newlabel{fig:lifecycle}{{2}{5}{Lifecycle of a Symphonic run. The learning loop still operates through the same Python files, but the surrounding service now owns restart, event streaming, metrics extraction, and the human intervention pathway}{figure.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Mechanism map used in the paper's conservative causal argument. The left column is verified from code, the middle column names the operational risk being addressed, and the right column states the plausible research effect without overstating empirical certainty.}}{5}{figure.3}\protected@file@percent }
+\newlabel{fig:mechanism}{{3}{5}{Mechanism map used in the paper's conservative causal argument. The left column is verified from code, the middle column names the operational risk being addressed, and the right column states the plausible research effect without overstating empirical certainty}{figure.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {VII}Limitations, Reproducibility Gaps, and Future Work}{5}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VII-A}}Normalized Reproduction Campaigns}{5}{subsection.7.1}\protected@file@percent }
+\citation{ref_hidden_debt,ref_ml_test_score,ref_bouthillier}
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Observability and control surface derived directly from the codebase. This presentation is intentionally binary and readable: Symphonic's contribution is a visibly broader control surface, not a marginal visual difference on a scatter plot.}}{6}{table.3}\protected@file@percent }
+\newlabel{tab:telemetry}{{III}{6}{Observability and control surface derived directly from the codebase. This presentation is intentionally binary and readable: Symphonic's contribution is a visibly broader control surface, not a marginal visual difference on a scatter plot}{table.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces Repository-reported comparative snapshot included for context, not as a reproduced benchmark.}}{6}{table.4}\protected@file@percent }
+\newlabel{tab:bench}{{IV}{6}{Repository-reported comparative snapshot included for context, not as a reproduced benchmark}{table.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VII-B}}Richer Causal Telemetry}{6}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VII-C}}Multi-Agent and Hierarchical Research Orchestration}{6}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VII-D}}Benchmark Suites for Autonomous Research Infrastructure}{6}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VIII}Conclusion}{6}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{Appendix\nobreakspace  A: Repository Walkthrough, Screenshot, and Adoption Notes}{7}{section*.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {A-A}}What the Screenshot Shows}{7}{subsection.Appendix.A.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Dashboard screenshot checked into the Symphonic repository at {\ttfamily  \bfseries  \textcolor {accentteal}{docs/dashboard.png}}. The figure shows the live operator view that turns the underlying autonomous loop into an inspectable service.}}{7}{figure.4}\protected@file@percent }
+\newlabel{fig:appendix-dashboard}{{4}{7}{Dashboard screenshot checked into the Symphonic repository at \file {docs/dashboard.png}. The figure shows the live operator view that turns the underlying autonomous loop into an inspectable service}{figure.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {A-B}}Repository Layout and Major Components}{7}{subsection.Appendix.A.2}\protected@file@percent }
+\bibcite{ref_symphonic}{1}
+\bibcite{ref_autoresearch}{2}
+\bibcite{ref_nanochat}{3}
+\bibcite{ref_automl}{4}
+\bibcite{ref_hidden_debt}{5}
+\bibcite{ref_ml_test_score}{6}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {A-C}}Dependencies and Runtime Expectations}{8}{subsection.Appendix.A.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {A-D}}License and Reuse Posture}{8}{subsection.Appendix.A.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {A-E}}Example Commands for New Users}{8}{subsection.Appendix.A.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{8}{section*.2}\protected@file@percent }
+\bibcite{ref_mlflow}{7}
+\bibcite{ref_bouthillier}{8}
+\bibcite{ref_sweagent}{9}
+\bibcite{ref_agentlab}{10}
+\bibcite{ref_aiscientist}{11}
+\bibcite{ref_aiscientist_v2}{12}
+\bibcite{ref_opencode}{13}
+\gdef \@abspage@last{9}

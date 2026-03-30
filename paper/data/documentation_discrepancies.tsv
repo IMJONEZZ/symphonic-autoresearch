@@ -1,0 +1,3 @@
+topic	checked_in_prose	checked_in_code	paper_handling
+Training dataset	README, program, and research config mention FineWeb-Edu	prepare.py downloads karpathy/climbmix-400b-shuffle	Treat dataset identity as code-grounded only; avoid claiming FineWeb-Edu as verified input
+Quantitative benchmark evidence	README reports comparative H100 vs DGX Spark results	No results.tsv or run.log artifacts are present in either checked-out repo	Label benchmark numbers as repository-reported, not independently reproduced

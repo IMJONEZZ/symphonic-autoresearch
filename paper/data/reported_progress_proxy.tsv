@@ -1,0 +1,5 @@
+system	experiment_index	val_bpb	point_label
+Karpathy autoresearch	0	0.9979	baseline
+Karpathy autoresearch	126	0.9697	best_reported
+Symphonic Autoresearch	0	1.3944	baseline
+Symphonic Autoresearch	52	1.1818	best_reported
