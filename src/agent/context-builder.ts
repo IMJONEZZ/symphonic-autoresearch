@@ -1,6 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 
+/** Rough token estimate: ~4 characters per token for mixed English/code. */
+const CHARS_PER_TOKEN = 4;
+
+/** Maximum tokens for the entire assembled prompt. */
+const MAX_PROMPT_TOKENS = 120_000;
+
+/** Maximum tokens for injected results/discarded lists. */
+const MAX_RESULTS_TOKENS = 20_000;
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
+}
+
 export interface AutoresearchPromptOptions {
   programMd: string;
   workspacePath: string;
@@ -48,13 +61,34 @@ function parseResultsTsv(filePath: string): ExperimentResult[] | null {
   }
 }
 
-function formatResultsTable(results: ExperimentResult[]): string {
-  let table = "| commit | val_bpb | final_loss | memory_gb | status | description |\n";
-  table += "|--------|---------|------------|-----------|--------|-------------|\n";
-  for (const r of results) {
-    table += `| ${r.commit} | ${r.valBpb} | ${r.finalLoss} | ${r.memoryGb} | ${r.status} | ${r.description} |\n`;
+/**
+ * Format results as a markdown table, keeping only the most recent rows
+ * that fit within the results token budget.
+ */
+function formatResultsTable(results: ExperimentResult[], tokenBudget: number): string {
+  const header = "| commit | val_bpb | final_loss | memory_gb | status | description |\n" +
+    "|--------|---------|------------|-----------|--------|-------------|\n";
+  const headerTokens = estimateTokens(header);
+
+  // Build rows from most recent backwards until we hit the budget
+  const rows: string[] = [];
+  let rowTokens = 0;
+  for (let i = results.length - 1; i >= 0; i--) {
+    const r = results[i];
+    const row = `| ${r.commit} | ${r.valBpb} | ${r.finalLoss} | ${r.memoryGb} | ${r.status} | ${r.description} |\n`;
+    const cost = estimateTokens(row);
+    if (headerTokens + rowTokens + cost > tokenBudget) break;
+    rows.unshift(row);
+    rowTokens += cost;
   }
-  return table;
+
+  const skipped = results.length - rows.length;
+  let prefix = "";
+  if (skipped > 0) {
+    prefix = `*(Showing last ${rows.length} of ${results.length} experiments. ${skipped} older experiments omitted.)*\n\n`;
+  }
+
+  return prefix + header + rows.join("");
 }
 
 function summarizeResults(results: ExperimentResult[]): string {
@@ -83,10 +117,25 @@ function summarizeResults(results: ExperimentResult[]): string {
   return `${total} experiments run. ${bestLine} ${kept} kept, ${discarded} discarded, ${crashed} crashed.`;
 }
 
-function getDiscardedDescriptions(results: ExperimentResult[]): string[] {
-  return results
+/**
+ * Get discarded/crashed experiment descriptions, keeping only the most recent
+ * that fit within the given token budget.
+ */
+function getDiscardedDescriptions(results: ExperimentResult[], tokenBudget: number): string[] {
+  const all = results
     .filter((r) => r.status === "discard" || r.status === "crash")
     .map((r) => `- [${r.status}] ${r.commit}: ${r.description}`);
+
+  // Take from the end (most recent) until budget exhausted
+  const kept: string[] = [];
+  let tokens = 0;
+  for (let i = all.length - 1; i >= 0; i--) {
+    const cost = estimateTokens(all[i]);
+    if (tokens + cost > tokenBudget) break;
+    kept.unshift(all[i]);
+    tokens += cost;
+  }
+  return kept;
 }
 
 export function buildAutoresearchPrompt(opts: AutoresearchPromptOptions): string {
@@ -103,13 +152,17 @@ export function buildAutoresearchPrompt(opts: AutoresearchPromptOptions): string
   const resultsPath = path.join(opts.workspacePath, "results.tsv");
   const results = parseResultsTsv(resultsPath);
 
+  // Budget: reserve half of MAX_RESULTS_TOKENS for the table, half for discarded list
+  const tableBudget = Math.floor(MAX_RESULTS_TOKENS * 0.6);
+  const discardedBudget = Math.floor(MAX_RESULTS_TOKENS * 0.4);
+
   // Current Experiment State
   prompt += "\n\n## Current Experiment State:\n\n";
   if (results && results.length > 0) {
-    prompt += formatResultsTable(results);
+    prompt += formatResultsTable(results, tableBudget);
     prompt += "\n" + summarizeResults(results) + "\n\n";
 
-    const discarded = getDiscardedDescriptions(results);
+    const discarded = getDiscardedDescriptions(results, discardedBudget);
     if (discarded.length > 0) {
       prompt += "**Discarded experiments to avoid repeating:**\n";
       prompt += discarded.join("\n") + "\n";
@@ -145,6 +198,14 @@ export function buildAutoresearchPrompt(opts: AutoresearchPromptOptions): string
   prompt += "- You are resuming an ongoing experiment run. Read results.tsv for what's been tried.\n";
   prompt += "- Do NOT repeat discarded experiments. Continue from the current best commit.\n";
   prompt += "- Run `git log --oneline -10` to see recent history.\n";
+
+  // Enforce overall prompt token cap
+  const totalTokens = estimateTokens(prompt);
+  if (totalTokens > MAX_PROMPT_TOKENS) {
+    const maxChars = MAX_PROMPT_TOKENS * CHARS_PER_TOKEN;
+    // Keep the end of the prompt (most recent context is more valuable)
+    prompt = "...[prompt truncated to fit token budget]\n\n" + prompt.slice(prompt.length - maxChars);
+  }
 
   return prompt;
 }
