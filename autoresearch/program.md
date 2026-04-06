@@ -116,10 +116,10 @@ LOOP FOREVER:
 5. Read out the results: `grep "^val_bpb:\|^peak_vram_mb:" run.log` and also capture the final loss value from the last training step line in run.log
 6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
 7a. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
-7b. **Check for user instructions**: After each experiment, check if `.symphonic-autoresearch-user-instructions.md` exists in the workspace. If it does:
+7b. **Check for user instructions**: After each experiment, check if `{{INSTRUCTION_FILE}}` exists in the workspace. If it does:
     - Read it — it contains instructions from the human operator
     - Follow the instructions (they may redirect your next experiment, change strategy, etc.)
-    - Delete the file after reading: `rm .symphonic-autoresearch-user-instructions.md`
+    - Delete the file after reading: `rm {{INSTRUCTION_FILE}}`
     - Continue the experiment loop incorporating the new instructions
 8. If val_bpb improved (lower), you "advance" the branch, keeping the git commit
 9. If val_bpb is equal or worse, you git reset back to where you started

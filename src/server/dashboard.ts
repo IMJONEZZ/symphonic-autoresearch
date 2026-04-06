@@ -1,5 +1,26 @@
-import type { OrchestratorSnapshot, TrainingMetrics } from "../orchestrator/orchestrator.js";
+import type { OrchestratorSnapshot, TrainingMetrics, ExperimentResult } from "../orchestrator/orchestrator.js";
 import type { HardwareMetrics } from "../monitor/hardware-monitor.js";
+import type {
+  MetricsConfig,
+  ResultsSchema,
+  SummaryMetricField,
+  ProgressMetricField,
+} from "../types/workflow.js";
+
+/**
+ * Format a number according to a printf-style format string. Only supports
+ * %f/%d/%s with optional precision (e.g. "%.6f", "%d"). Falls back to
+ * String(v) if the format can't be parsed.
+ */
+function formatMetric(v: number, fmt: string): string {
+  const m = fmt.match(/^%(?:\.(\d+))?([fdes])$/);
+  if (!m) return String(v);
+  const precision = m[1] ? parseInt(m[1], 10) : undefined;
+  const kind = m[2];
+  if (kind === "d") return String(Math.round(v));
+  if (kind === "e") return v.toExponential(precision ?? 6);
+  return precision !== undefined ? v.toFixed(precision) : String(v);
+}
 
 /**
  * Generate an HTML dashboard from orchestrator snapshot.
@@ -191,8 +212,17 @@ function renderAutoresearchBody(snapshot: OrchestratorSnapshot): string {
   const dotClass = ar.active ? "active" : "inactive";
   const uptime = formatDuration(ar.uptime_seconds);
   const training = snapshot.training;
-  const trainingBar = training ? renderTrainingBar(training) : `<div class="training-bar"><span class="training-metric" style="color:#665c54;">Waiting for training data...</span></div>`;
+  const metricsConfig = snapshot.autoresearch_metrics;
+  const schema = snapshot.autoresearch_schema;
+  const primaryLabel = metricsConfig?.primary.label ?? "metric";
+  const trainingBar = training && metricsConfig
+    ? renderTrainingBar(training, metricsConfig)
+    : `<div class="training-bar"><span class="training-metric" style="color:#665c54;">Waiting for training data...</span></div>`;
   const hardwareBar = renderHardwareBar(snapshot.hardware);
+  const tableHeaderCells = schema
+    ? schema.columns.map((c) => `<th>${esc(c === schema.metric_column ? primaryLabel : c)}</th>`).join("")
+    : `<th>Commit</th><th>${esc(primaryLabel)}</th><th>Status</th><th>Description</th>`;
+  const tableColspan = schema ? schema.columns.length : 4;
 
   return `
     <div class="dashboard">
@@ -228,7 +258,7 @@ function renderAutoresearchBody(snapshot: OrchestratorSnapshot): string {
         </div>
         <div class="stat stat-purple">
           <div class="stat-value" id="stat-bestbpb">-</div>
-          <div class="stat-label">Best val_bpb</div>
+          <div class="stat-label">Best ${esc(primaryLabel)}</div>
         </div>
       </div>
 
@@ -273,17 +303,10 @@ function renderAutoresearchBody(snapshot: OrchestratorSnapshot): string {
           <div class="panel-body">
             <table id="results-table">
              <thead>
-                 <tr>
-                   <th>Commit</th>
-                   <th>val_bpb</th>
-                   <th>Final Loss</th>
-                   <th title="CUDA allocated only (torch.cuda.max_memory_allocated). See RAM in hardware bar for actual system memory usage.">VRAM (CUDA)</th>
-                   <th>Status</th>
-                   <th>Description</th>
-                 </tr>
+                 <tr>${tableHeaderCells}</tr>
                </thead>
                <tbody id="results-body">
-                 <tr><td colspan="6" style="text-align:center;color:#665c54;padding:0.75rem;">Loading...</td></tr>
+                 <tr><td colspan="${tableColspan}" style="text-align:center;color:#665c54;padding:0.75rem;">Loading...</td></tr>
                </tbody>
             </table>
           </div>
@@ -301,23 +324,54 @@ function renderAutoresearchBody(snapshot: OrchestratorSnapshot): string {
       </div>`;
 }
 
-function renderTrainingBar(t: TrainingMetrics): string {
-  const pct = t.progress_pct ?? 0;
+function renderTrainingBar(t: TrainingMetrics, metricsConfig: MetricsConfig): string {
+  const f = t.fields;
+  const pct = f["progress_pct"] ?? 0;
   const parts: string[] = [];
-  if (t.step !== undefined) parts.push(`<span class="training-metric">Step <span>${t.step}</span></span>`);
-  if (t.loss !== undefined) parts.push(`<span class="training-metric">Loss <span class="highlight">${t.loss.toFixed(4)}</span></span>`);
-  if (t.tok_per_sec !== undefined) parts.push(`<span class="training-metric">Tok/s <span>${t.tok_per_sec.toLocaleString()}</span></span>`);
-  if (t.mfu_pct !== undefined) parts.push(`<span class="training-metric">MFU <span>${t.mfu_pct.toFixed(1)}%</span></span>`);
-  if (t.dt_ms !== undefined) parts.push(`<span class="training-metric">dt <span>${t.dt_ms}ms</span></span>`);
-  if (t.remaining_sec !== undefined) parts.push(`<span class="training-metric">ETA <span>${t.remaining_sec}s</span></span>`);
-  if (t.peak_vram_mb !== undefined) parts.push(`<span class="training-metric">VRAM <span>${(t.peak_vram_mb / 1024).toFixed(1)}GB</span></span>`);
-  if (t.val_bpb !== undefined) parts.push(`<span class="training-metric">val_bpb <span class="highlight">${t.val_bpb.toFixed(6)}</span></span>`);
+
+  // Progress-line fields: render any that have a label and a current value.
+  for (const pl of metricsConfig.progress_line) {
+    if (!pl.label) continue;
+    const v = f[pl.name];
+    if (v === undefined) continue;
+    parts.push(renderChip(pl.label, v, pl.name));
+  }
+
+  // Summary fields: render any that have a label and a current value.
+  for (const sf of metricsConfig.summary_fields) {
+    if (!sf.label) continue;
+    const v = f[sf.name];
+    if (v === undefined) continue;
+    parts.push(renderChip(sf.label, v, sf.name));
+  }
+
+  // Primary metric: always highlighted when present.
+  const primaryVal = f[metricsConfig.primary.name];
+  if (primaryVal !== undefined) {
+    parts.push(
+      `<span class="training-metric">${esc(metricsConfig.primary.label)} ` +
+      `<span class="highlight">${formatMetric(primaryVal, metricsConfig.primary.format)}</span></span>`,
+    );
+  }
 
   return `<div class="training-bar">
     ${parts.join("")}
     <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
     <span class="training-metric"><span>${pct.toFixed(1)}%</span></span>
   </div>`;
+}
+
+/** Render a single chip. A few names get domain-friendly display. */
+function renderChip(label: string, value: number, fieldName: string): string {
+  let display: string;
+  if (fieldName === "tok_per_sec") display = value.toLocaleString();
+  else if (fieldName === "peak_vram_mb") display = (value / 1024).toFixed(1) + "GB";
+  else if (fieldName === "dt_ms") display = value + "ms";
+  else if (fieldName === "remaining_sec") display = value + "s";
+  else if (fieldName === "mfu_pct" || fieldName === "mfu_percent") display = value.toFixed(1) + "%";
+  else if (Number.isInteger(value)) display = String(value);
+  else display = value.toFixed(4);
+  return `<span class="training-metric">${esc(label)} <span>${display}</span></span>`;
 }
 
 function renderHardwareBar(hw: HardwareMetrics | null): string {
@@ -392,11 +446,38 @@ function extractDisplayMsg(message: string): string {
 }
 
 function autoresearchScript(snapshot: OrchestratorSnapshot): string {
+  const metricsJson = JSON.stringify(snapshot.autoresearch_metrics ?? null);
+  const schemaJson = JSON.stringify(snapshot.autoresearch_schema ?? null);
   return `<script>
 (function() {
   let autoScroll = true;
   let traceCount = ${snapshot.event_log.length};
   let expResults = [];
+  const METRICS = ${metricsJson};
+  const SCHEMA = ${schemaJson};
+  const PRIMARY = METRICS ? METRICS.primary : { name: 'val_bpb', direction: 'minimize', label: 'val_bpb', format: '%.6f' };
+  const MINIMIZE = PRIMARY.direction !== 'maximize';
+
+  function fmtMetric(v, fmt) {
+    if (v === undefined || v === null || isNaN(v)) return '-';
+    const m = String(fmt || '').match(/^%(?:\\.(\\d+))?([fdes])$/);
+    if (!m) return String(v);
+    const p = m[1] ? parseInt(m[1],10) : undefined;
+    const k = m[2];
+    if (k === 'd') return String(Math.round(v));
+    if (k === 'e') return v.toExponential(p !== undefined ? p : 6);
+    return p !== undefined ? v.toFixed(p) : String(v);
+  }
+
+  function chipDisplay(value, fieldName) {
+    if (fieldName === 'tok_per_sec') return value.toLocaleString();
+    if (fieldName === 'peak_vram_mb') return (value/1024).toFixed(1) + 'GB';
+    if (fieldName === 'dt_ms') return value + 'ms';
+    if (fieldName === 'remaining_sec') return value + 's';
+    if (fieldName === 'mfu_pct' || fieldName === 'mfu_percent') return value.toFixed(1) + '%';
+    if (Number.isInteger(value)) return String(value);
+    return value.toFixed(4);
+  }
 
   // --- SSE ---
   function connectSSE() {
@@ -525,8 +606,8 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     canvas.style.height = h + 'px';
     ctx.clearRect(0, 0, w, h);
 
-    // Filter to experiments with valid val_bpb (exclude crashes with 0)
-    const valid = expResults.filter(r => r.val_bpb > 0);
+    // Filter to experiments with a finite primary metric value.
+    const valid = expResults.filter(r => Number.isFinite(r.metric));
     if (valid.length < 1) {
       ctx.fillStyle = '#665c54'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
       ctx.fillText('Waiting for experiment results...', w/2, h/2);
@@ -537,13 +618,13 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     const cw = w - pad.left - pad.right;
     const ch = h - pad.top - pad.bottom;
 
-    // Axis ranges
-    const bpbs = valid.map(r => r.val_bpb);
-    const maxBpb = Math.max(...bpbs);
-    const minBpb = Math.min(...bpbs);
-    const bpbMargin = (maxBpb - minBpb) * 0.08 || 0.005;
-    const yMax = maxBpb + bpbMargin;
-    const yMin = minBpb - bpbMargin;
+    // Axis ranges on the primary metric
+    const metrics = valid.map(r => r.metric);
+    const maxM = Math.max(...metrics);
+    const minM = Math.min(...metrics);
+    const mMargin = (maxM - minM) * 0.08 || 0.005;
+    const yMax = maxM + mMargin;
+    const yMin = minM - mMargin;
     const yr = yMax - yMin;
     const xMax = expResults.length;
     const xr = xMax || 1;
@@ -552,9 +633,13 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     ctx.strokeStyle = '#3c3836'; ctx.lineWidth = 0.5;
     for (let i=0;i<=4;i++){const y=pad.top+ch*i/4;ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();}
 
-    // Y labels (val_bpb)
+    // Y labels (primary metric)
     ctx.fillStyle = '#928374'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
     for (let i=0;i<=4;i++){const v=yMax-yr*i/4;ctx.fillText(v.toFixed(4),pad.left-4,pad.top+ch*i/4+3);}
+    ctx.save(); ctx.translate(10, pad.top+ch/2); ctx.rotate(-Math.PI/2);
+    ctx.fillStyle = '#665c54'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(PRIMARY.label, 0, 0);
+    ctx.restore();
 
     // X labels (experiment #)
     ctx.textAlign = 'center';
@@ -565,25 +650,17 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     ctx.fillStyle = '#665c54'; ctx.font = '8px monospace'; ctx.textAlign = 'center';
     ctx.fillText('experiment #', pad.left + cw/2, h - 1);
 
-    // Goal line at 0.977
-    const goalY = pad.top + ((yMax - 0.977) / yr) * ch;
-    if (goalY > pad.top && goalY < pad.top + ch) {
-      ctx.strokeStyle = '#b8bb26'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
-      ctx.beginPath(); ctx.moveTo(pad.left, goalY); ctx.lineTo(w - pad.right, goalY); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#b8bb26'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
-      ctx.fillText('goal: 0.977', pad.left + 3, goalY - 4);
-    }
-
-    // Running best line (only from kept experiments)
-    let runBest = Infinity;
+    // Running best line (only from kept experiments; direction-aware)
+    const keepStatus = SCHEMA ? SCHEMA.keep_status : 'keep';
+    let runBest = MINIMIZE ? Infinity : -Infinity;
     const bestLine = [];
     for (let i = 0; i < expResults.length; i++) {
       const r = expResults[i];
-      if (r.status === 'keep' && r.val_bpb > 0 && r.val_bpb < runBest) {
-        runBest = r.val_bpb;
+      if (r.status === keepStatus && Number.isFinite(r.metric)) {
+        const better = MINIMIZE ? r.metric < runBest : r.metric > runBest;
+        if (better) runBest = r.metric;
       }
-      if (runBest < Infinity) bestLine.push({x: i, y: runBest});
+      if (Number.isFinite(runBest)) bestLine.push({x: i, y: runBest});
     }
     if (bestLine.length > 0) {
       ctx.beginPath(); ctx.strokeStyle = '#fabd2f'; ctx.lineWidth = 2.5;
@@ -595,27 +672,27 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
       ctx.stroke();
     }
 
-    // Scatter dots
-    const colors = {keep: '#b8bb26', discard: '#928374', crash: '#fb4934'};
-    const radii = {keep: 4, discard: 3, crash: 3.5};
+    // Scatter dots (color by status: keep / crash / other=discard)
+    const crashSet = new Set(SCHEMA ? (SCHEMA.discard_statuses || []).filter(s => s === 'crash') : ['crash']);
     for (let i = 0; i < expResults.length; i++) {
       const r = expResults[i];
-      if (r.val_bpb <= 0) continue; // skip crashes with no metric
+      if (!Number.isFinite(r.metric)) continue;
       const x = pad.left + ((i + 0.5) / xr) * cw;
-      const y = pad.top + ((yMax - r.val_bpb) / yr) * ch;
-      const color = colors[r.status] || '#928374';
-      const radius = radii[r.status] || 3;
+      const y = pad.top + ((yMax - r.metric) / yr) * ch;
+      let color = '#928374', radius = 3;
+      if (r.status === keepStatus) { color = '#b8bb26'; radius = 4; }
+      else if (crashSet.has(r.status)) { color = '#fb4934'; radius = 3.5; }
       ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fillStyle = color; ctx.fill();
-      if (r.status === 'keep') {
+      if (r.status === keepStatus) {
         ctx.strokeStyle = '#b8bb26'; ctx.lineWidth = 1; ctx.stroke();
       }
     }
 
-    // Crash markers (X at top of chart)
+    // Crash markers (X at top of chart) for rows whose metric couldn't be parsed
     for (let i = 0; i < expResults.length; i++) {
       const r = expResults[i];
-      if (r.status !== 'crash') continue;
+      if (!crashSet.has(r.status) || Number.isFinite(r.metric)) continue;
       const x = pad.left + ((i + 0.5) / xr) * cw;
       const y = pad.top + 8;
       ctx.strokeStyle = '#fb4934'; ctx.lineWidth = 1.5;
@@ -673,7 +750,7 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
       }
       if (trainingRes.ok) {
         const t = await trainingRes.json();
-        if (t && t.step !== undefined) updateTrainingBar(t);
+        if (t && t.fields) updateTrainingBar(t);
       }
       if (resultsRes.ok) {
         const results = await resultsRes.json();
@@ -699,16 +776,27 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
 
   function updateTrainingBar(t) {
     const bar = document.getElementById('training-bar');
-    const pct = t.progress_pct || 0;
-    let p = [];
-    if (t.step!==undefined) p.push('<span class="training-metric">Step <span>'+t.step+'</span></span>');
-    if (t.loss!==undefined) p.push('<span class="training-metric">Loss <span class="highlight">'+t.loss.toFixed(4)+'</span></span>');
-    if (t.tok_per_sec!==undefined) p.push('<span class="training-metric">Tok/s <span>'+t.tok_per_sec.toLocaleString()+'</span></span>');
-    if (t.mfu_pct!==undefined) p.push('<span class="training-metric">MFU <span>'+t.mfu_pct.toFixed(1)+'%</span></span>');
-    if (t.dt_ms!==undefined) p.push('<span class="training-metric">dt <span>'+t.dt_ms+'ms</span></span>');
-    if (t.remaining_sec!==undefined) p.push('<span class="training-metric">ETA <span>'+t.remaining_sec+'s</span></span>');
-    if (t.peak_vram_mb!==undefined) p.push('<span class="training-metric">VRAM <span>'+(t.peak_vram_mb/1024).toFixed(1)+'GB</span></span>');
-    if (t.val_bpb!==undefined) p.push('<span class="training-metric">val_bpb <span class="highlight">'+t.val_bpb.toFixed(6)+'</span></span>');
+    const f = t.fields || {};
+    const pct = f.progress_pct || 0;
+    const p = [];
+    if (METRICS) {
+      for (const pl of METRICS.progress_line) {
+        if (!pl.label) continue;
+        const v = f[pl.name];
+        if (v === undefined) continue;
+        p.push('<span class="training-metric">'+esc(pl.label)+' <span>'+chipDisplay(v, pl.name)+'</span></span>');
+      }
+      for (const sf of METRICS.summary_fields) {
+        if (!sf.label) continue;
+        const v = f[sf.name];
+        if (v === undefined) continue;
+        p.push('<span class="training-metric">'+esc(sf.label)+' <span>'+chipDisplay(v, sf.name)+'</span></span>');
+      }
+      const pv = f[PRIMARY.name];
+      if (pv !== undefined) {
+        p.push('<span class="training-metric">'+esc(PRIMARY.label)+' <span class="highlight">'+fmtMetric(pv, PRIMARY.format)+'</span></span>');
+      }
+    }
     bar.innerHTML = '<div class="training-bar">'+p.join('')
       +'<div class="progress-bar"><div class="progress-fill" style="width:'+pct+'%"></div></div>'
       +'<span class="training-metric"><span>'+pct.toFixed(1)+'%</span></span></div>';
@@ -742,18 +830,42 @@ function autoresearchScript(snapshot: OrchestratorSnapshot): string {
     const body = document.getElementById('results-body');
     document.getElementById('results-count').textContent = results.length;
     document.getElementById('stat-experiments').textContent = results.length;
-    let best = Infinity;
-    for (const r of results) if (r.status==='keep'&&r.val_bpb>0&&r.val_bpb<best) best=r.val_bpb;
-    if (best<Infinity) document.getElementById('stat-bestbpb').textContent = best.toFixed(4);
-    if (!results.length) { body.innerHTML='<tr><td colspan="6" style="text-align:center;color:#665c54;padding:0.75rem;">No experiments yet</td></tr>'; return; }
+    const keepStatus = SCHEMA ? SCHEMA.keep_status : 'keep';
+    const columns = SCHEMA ? SCHEMA.columns : ['commit','val_bpb','status','description'];
+    const metricCol = SCHEMA ? SCHEMA.metric_column : 'val_bpb';
+    const statusCol = SCHEMA ? SCHEMA.status_column : 'status';
+
+    let best = MINIMIZE ? Infinity : -Infinity;
+    for (const r of results) {
+      if (r.status !== keepStatus || !Number.isFinite(r.metric)) continue;
+      if (MINIMIZE ? r.metric < best : r.metric > best) best = r.metric;
+    }
+    if (Number.isFinite(best)) document.getElementById('stat-bestbpb').textContent = fmtMetric(best, PRIMARY.format);
+
+    if (!results.length) {
+      body.innerHTML='<tr><td colspan="'+columns.length+'" style="text-align:center;color:#665c54;padding:0.75rem;">No experiments yet</td></tr>';
+      return;
+    }
     body.innerHTML = results.slice().reverse().map(r => {
-      const sc='status-'+r.status, bc=(r.status==='keep'&&r.val_bpb===best)?'bpb-best':'bpb-val';
-      return '<tr><td style="font-family:monospace;color:#83a598;">'+esc(r.commit)+'</td>'
-        +'<td class="'+bc+'">'+(r.val_bpb>0?r.val_bpb.toFixed(6):'-')+'</td>'
-        +'<td class="bpb-val">'+(r.final_loss>0?r.final_loss.toFixed(4):'-')+'</td>'
-        +'<td>'+(r.memory_gb>0?r.memory_gb.toFixed(1)+' GB':'-')+'</td>'
-        +'<td class="'+sc+'">'+esc(r.status)+'</td>'
-        +'<td style="color:#bdae93;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(r.description)+'</td></tr>';
+      const row = r.row || {};
+      const isBestRow = r.status === keepStatus && Number.isFinite(r.metric) && r.metric === best;
+      const cells = columns.map(col => {
+        const raw = row[col] ?? '';
+        if (col === 'commit') {
+          return '<td style="font-family:monospace;color:#83a598;">'+esc(raw)+'</td>';
+        }
+        if (col === metricCol) {
+          const cls = isBestRow ? 'bpb-best' : 'bpb-val';
+          const v = parseFloat(raw);
+          const disp = Number.isFinite(v) ? fmtMetric(v, PRIMARY.format) : '-';
+          return '<td class="'+cls+'">'+disp+'</td>';
+        }
+        if (col === statusCol) {
+          return '<td class="status-'+esc(raw)+'">'+esc(raw)+'</td>';
+        }
+        return '<td style="color:#bdae93;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(raw)+'</td>';
+      }).join('');
+      return '<tr>'+cells+'</tr>';
     }).join('');
   }
 

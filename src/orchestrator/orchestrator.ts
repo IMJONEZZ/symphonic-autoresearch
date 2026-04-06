@@ -1,7 +1,7 @@
 import type { OrchestratorState, RunningEntry } from "../types/orchestrator.js";
 import type { Issue } from "../types/issue.js";
 import type { AgentEvent } from "../types/agent.js";
-import type { ServiceConfig } from "../types/workflow.js";
+import type { ServiceConfig, MetricsConfig, ResultsSchema } from "../types/workflow.js";
 import type { ConfigManager } from "../config/watcher.js";
 import { validateDispatchConfig } from "../config/validation.js";
 import { sortForDispatch, shouldDispatch, hasAvailableSlots } from "./dispatch.js";
@@ -22,6 +22,10 @@ import type { Response } from "express";
 
 const EVENT_LOG_MAX = 500;
 const TRAINING_POLL_MS = 2000;
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 export class Orchestrator {
   private state: OrchestratorState;
@@ -317,6 +321,8 @@ export class Orchestrator {
       loss_history: this.lossHistory,
       hardware: this.hardwareMonitor?.getMetrics() ?? null,
       instruction: this.getInstructionStatus(),
+      autoresearch_metrics: config.mode === "autoresearch" ? config.autoresearch.metrics : null,
+      autoresearch_schema: config.mode === "autoresearch" ? config.autoresearch.results_schema : null,
     };
   }
 
@@ -334,51 +340,64 @@ export class Orchestrator {
 
   /**
    * Get experiment results from results.tsv in the autoresearch workspace.
+   * Parsing is schema-driven from autoresearch.results_schema.
    */
   getResults(): ExperimentResult[] {
     const config = this.configManager.getConfig();
-    const tsvPath = path.join(config.workspace.root, "autoresearch", "results.tsv");
+    const schema = config.autoresearch.results_schema;
+    const direction = config.autoresearch.metrics.primary.direction;
+    const tsvPath = path.join(
+      config.workspace.root,
+      config.autoresearch.workspace_name,
+      "results.tsv",
+    );
     try {
       const raw = fs.readFileSync(tsvPath, "utf-8");
       const lines = raw.trim().split("\n");
-      if (lines.length === 0) return [];
+      if (lines.length < 2) return [];
 
-      const headerLine = lines[0];
-      const isNewFormat = headerLine.includes("final_loss");
+      // Prefer the header written by the agent if it contains the metric column.
+      const headerCells = lines[0].split("\t").map((s) => s.trim());
+      const columns = headerCells.includes(schema.metric_column) ? headerCells : schema.columns;
 
-      const results = lines.slice(1).filter((l) => l.trim()).map((line) => {
-        const parts = line.split("\t");
-        if (isNewFormat && parts.length >= 6) {
+      const results: ExperimentResult[] = lines.slice(1)
+        .filter((l) => l.trim())
+        .map((line) => {
+          const cells = line.split("\t");
+          const row: Record<string, string> = {};
+          for (let c = 0; c < columns.length; c++) {
+            if (c === columns.length - 1) {
+              row[columns[c]] = cells.slice(c).join("\t").trim();
+            } else {
+              row[columns[c]] = (cells[c] ?? "").trim();
+            }
+          }
+          const metric = parseFloat(row[schema.metric_column] ?? "");
           return {
-            commit: parts[0]?.trim() ?? "",
-            val_bpb: parseFloat(parts[1]) || 0,
-            final_loss: parseFloat(parts[2]) || 0,
-            memory_gb: parseFloat(parts[3]) || 0,
-            status: (parts[4]?.trim() ?? "unknown") as "keep" | "discard" | "crash",
-            description: parts.slice(5).join("\t").trim(),
+            commit: row["commit"] ?? "",
+            status: row[schema.status_column] ?? "unknown",
+            description: row[schema.description_column] ?? "",
+            metric: Number.isNaN(metric) ? NaN : metric,
+            row,
           };
-        } else {
-          return {
-            commit: parts[0]?.trim() ?? "",
-            val_bpb: parseFloat(parts[1]) || 0,
-            final_loss: 0,
-            memory_gb: parseFloat(parts[2]) || 0,
-            status: (parts[3]?.trim() ?? "unknown") as "keep" | "discard" | "crash",
-            description: parts.slice(4).join("\t").trim(),
-          };
-        }
-      });
+        });
 
-      // Recompute status: the agent may retroactively edit old "keep" to "discard".
-      // Walk in order and mark any experiment that set a new best val_bpb as "keep".
-      let runningBest = Infinity;
+      // Recompute running-best status: walk in order and mark each row that
+      // improved on the running best as keep_status; otherwise first discard_status.
+      const minimize = direction === "minimize";
+      const firstDiscard = schema.discard_statuses.find((s) => s !== "crash") ?? "discard";
+      let runningBest = minimize ? Infinity : -Infinity;
       for (const r of results) {
-        if (r.status === "crash" || r.val_bpb <= 0) continue;
-        if (r.val_bpb < runningBest) {
-          r.status = "keep";
-          runningBest = r.val_bpb;
+        if (r.status === "crash") continue;
+        if (!Number.isFinite(r.metric)) continue;
+        const isBetter = minimize ? r.metric < runningBest : r.metric > runningBest;
+        if (isBetter) {
+          r.status = schema.keep_status;
+          r.row[schema.status_column] = schema.keep_status;
+          runningBest = r.metric;
         } else {
-          r.status = "discard";
+          r.status = firstDiscard;
+          r.row[schema.status_column] = firstDiscard;
         }
       }
 
@@ -430,7 +449,11 @@ export class Orchestrator {
   private deliverPendingInstruction(): void {
     if (!this.pendingInstruction) return;
     const config = this.configManager.getConfig();
-    const filePath = path.join(config.workspace.root, "autoresearch", ".symphonic-autoresearch-user-instructions.md");
+    const filePath = path.join(
+      config.workspace.root,
+      config.autoresearch.workspace_name,
+      config.autoresearch.instruction_filename,
+    );
     try {
       fs.writeFileSync(filePath, this.pendingInstruction.message, "utf-8");
       this.instructionStatus = "delivered";
@@ -470,11 +493,50 @@ export class Orchestrator {
   }
 
   /**
-   * Poll run.log for training metrics.
+   * Poll run.log for training metrics. Regexes are built from the user's
+   * metrics config so arbitrary pipelines can expose arbitrary fields.
    */
   private startTrainingPoller(): void {
     const config = this.configManager.getConfig();
-    const runLogPath = path.join(config.workspace.root, "autoresearch", "run.log");
+    const runLogPath = path.join(
+      config.workspace.root,
+      config.autoresearch.workspace_name,
+      "run.log",
+    );
+
+    // Pre-compile regexes from metrics config.
+    // Summary fields use the convention `name: value` parsed from the whole log.
+    const summarySpecs: Array<{ name: string; regex: RegExp; type: string }> = [];
+    const { primary, summary_fields, progress_line } = config.autoresearch.metrics;
+    // primary metric appears in summary block as `<name>: <number>`
+    summarySpecs.push({
+      name: primary.name,
+      regex: new RegExp(`${escapeRegex(primary.name)}:\\s+([\\d.]+)`),
+      type: "float",
+    });
+    for (const sf of summary_fields) {
+      summarySpecs.push({
+        name: sf.name,
+        regex: new RegExp(`${escapeRegex(sf.name)}:\\s+([\\d.,]+)`),
+        type: sf.type,
+      });
+    }
+
+    // Progress-line fields come from user-declared regex patterns.
+    const progressSpecs: Array<{ name: string; regex: RegExp; type: string }> = [];
+    for (const pl of progress_line) {
+      try {
+        progressSpecs.push({ name: pl.name, regex: new RegExp(pl.pattern), type: pl.type });
+      } catch {
+        // Invalid regex already reported by validation; skip.
+      }
+    }
+
+    const parseFieldValue = (raw: string, type: string): number => {
+      if (type === "int") return parseInt(raw, 10);
+      if (type === "int_commas") return parseInt(raw.replace(/,/g, ""), 10);
+      return parseFloat(raw);
+    };
 
     this.trainingPollTimer = setInterval(() => {
       try {
@@ -484,46 +546,37 @@ export class Orchestrator {
         const lines = content.split(/[\r\n]+/).filter((l) => l.trim());
         if (lines.length === 0) return;
 
-        // Check for final summary block
-        const summaryMatch = content.match(/val_bpb:\s+([\d.]+)/);
-        const peakVramMatch = content.match(/peak_vram_mb:\s+([\d.]+)/);
-        const mfuMatch = content.match(/mfu_percent:\s+([\d.]+)/);
-        const totalTokensMatch = content.match(/total_tokens_M:\s+([\d.]+)/);
-        const numStepsMatch = content.match(/num_steps:\s+(\d+)/);
-        const numParamsMatch = content.match(/num_params_M:\s+([\d.]+)/);
+        const fields: Record<string, number> = {};
 
-        // Parse the last progress line: "step 00953 (100.0%) | loss: 0.997900 | ..."
+        // Summary block fields (full content scan)
+        for (const spec of summarySpecs) {
+          const m = content.match(spec.regex);
+          if (m) {
+            const v = parseFieldValue(m[1], spec.type);
+            if (Number.isFinite(v)) fields[spec.name] = v;
+          }
+        }
+
+        // Progress-line fields (last line only)
         const lastLine = lines[lines.length - 1];
-        const stepMatch = lastLine.match(/step\s+(\d+)/);
-        const pctMatch = lastLine.match(/\(([\d.]+)%\)/);
-        const lossMatch = lastLine.match(/loss:\s+([\d.]+)/);
-        const lrmMatch = lastLine.match(/lrm:\s+([\d.]+)/);
-        const dtMatch = lastLine.match(/dt:\s+(\d+)ms/);
-        const tokSecMatch = lastLine.match(/tok\/sec:\s+([\d,]+)/);
-        const mfuLineMatch = lastLine.match(/mfu:\s+([\d.]+)%/);
-        const remainingMatch = lastLine.match(/remaining:\s+(\d+)s/);
-
-        const step = stepMatch ? parseInt(stepMatch[1]) : undefined;
-        const loss = lossMatch ? parseFloat(lossMatch[1]) : undefined;
+        for (const spec of progressSpecs) {
+          const m = lastLine.match(spec.regex);
+          if (m) {
+            const v = parseFieldValue(m[1], spec.type);
+            if (Number.isFinite(v)) fields[spec.name] = v;
+          }
+        }
 
         this.trainingMetrics = {
-          step,
-          progress_pct: pctMatch ? parseFloat(pctMatch[1]) : undefined,
-          loss,
-          lr_multiplier: lrmMatch ? parseFloat(lrmMatch[1]) : undefined,
-          dt_ms: dtMatch ? parseInt(dtMatch[1]) : undefined,
-          tok_per_sec: tokSecMatch ? parseInt(tokSecMatch[1].replace(/,/g, "")) : undefined,
-          mfu_pct: mfuLineMatch ? parseFloat(mfuLineMatch[1]) : (mfuMatch ? parseFloat(mfuMatch[1]) : undefined),
-          remaining_sec: remainingMatch ? parseInt(remainingMatch[1]) : undefined,
-          val_bpb: summaryMatch ? parseFloat(summaryMatch[1]) : undefined,
-          peak_vram_mb: peakVramMatch ? parseFloat(peakVramMatch[1]) : undefined,
-          total_tokens_M: totalTokensMatch ? parseFloat(totalTokensMatch[1]) : undefined,
-          num_steps: numStepsMatch ? parseInt(numStepsMatch[1]) : undefined,
-          num_params_M: numParamsMatch ? parseFloat(numParamsMatch[1]) : undefined,
+          fields,
           updated_at: new Date().toISOString(),
         };
 
-        // Append to loss history for charting (deduplicate by step)
+        // Append to loss history for charting (deduplicate by step).
+        // "step" and "loss" are conventional field names; if either is
+        // missing from the user's progress_line config, we skip charting.
+        const step = fields["step"];
+        const loss = fields["loss"];
         if (step !== undefined && loss !== undefined) {
           const last = this.lossHistory[this.lossHistory.length - 1];
           // Detect new experiment when step resets to a lower value
@@ -961,30 +1014,27 @@ export interface EventLogEntry {
   raw?: unknown;
 }
 
+/**
+ * Training metrics parsed from run.log. Field keys come from the user's
+ * metrics config (nanochat defaults produce val_bpb/peak_vram_mb/loss/etc).
+ */
 export interface TrainingMetrics {
-  step?: number;
-  progress_pct?: number;
-  loss?: number;
-  lr_multiplier?: number;
-  dt_ms?: number;
-  tok_per_sec?: number;
-  mfu_pct?: number;
-  remaining_sec?: number;
-  val_bpb?: number;
-  peak_vram_mb?: number;
-  total_tokens_M?: number;
-  num_steps?: number;
-  num_params_M?: number;
+  fields: Record<string, number>;
   updated_at: string;
 }
 
+/**
+ * One row from results.tsv, normalized. `row` carries every column by name
+ * (for generic table rendering); `metric` is the parsed primary-metric
+ * number (NaN if unparseable); status/commit/description are the schema-
+ * configured columns surfaced for convenient access.
+ */
 export interface ExperimentResult {
   commit: string;
-  val_bpb: number;
-  final_loss: number;
-  memory_gb: number;
-  status: "keep" | "discard" | "crash";
+  status: string;
   description: string;
+  metric: number;
+  row: Record<string, string>;
 }
 
 export interface OrchestratorSnapshot {
@@ -1020,6 +1070,8 @@ export interface OrchestratorSnapshot {
   loss_history: Array<{ step: number; loss: number; timestamp: string; experiment: number }>;
   hardware: HardwareMetrics | null;
   instruction: { status: string; message?: string; submitted_at?: string; delivered_at?: string };
+  autoresearch_metrics: MetricsConfig | null;
+  autoresearch_schema: ResultsSchema | null;
 }
 
 export interface IssueDetail {

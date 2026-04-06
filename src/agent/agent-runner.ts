@@ -10,6 +10,7 @@ import { buildTurnPrompt } from "../prompt/renderer.js";
 import { buildAutoresearchPrompt } from "./context-builder.js";
 import type { TrackerClient } from "../tracker/tracker-client.js";
 import type { Logger } from "../logging/logger.js";
+import { expandPath } from "../utils/path.js";
 import { createEmbeddingClient } from "../knowledge/embedding-client.js";
 import { KnowledgeStore } from "../knowledge/knowledge-store.js";
 import { SearchInterceptor } from "../knowledge/search-interceptor.js";
@@ -111,17 +112,11 @@ export async function runAutoresearch(
 
   // 1. Set up workspace
   log.info("Setting up autoresearch workspace");
-  const workspace = await workspaceManager.ensureWorkspace("autoresearch");
+  const workspace = await workspaceManager.ensureWorkspace(arConfig.workspace_name);
   const workspacePath = workspace.path;
 
-  // 2. Copy autoresearch files into workspace
-  const filesToCopy = [
-    { src: arConfig.prepare_py, dest: "prepare.py" },
-    { src: arConfig.train_py, dest: "train.py" },
-    { src: arConfig.pyproject_toml, dest: "pyproject.toml" },
-  ];
-
-  for (const { src, dest } of filesToCopy) {
+  // 2. Copy autoresearch files into workspace (config-driven)
+  for (const { src, dest } of arConfig.files) {
     const srcPath = path.resolve(src);
     const destPath = path.join(workspacePath, dest);
     if (fs.existsSync(srcPath)) {
@@ -132,26 +127,38 @@ export async function runAutoresearch(
     }
   }
 
-  // 3. Copy .python-version if exists
-  const pyVersionSrc = path.join(path.dirname(arConfig.prepare_py), ".python-version");
-  if (fs.existsSync(pyVersionSrc)) {
-    fs.copyFileSync(pyVersionSrc, path.join(workspacePath, ".python-version"));
+  // 3. Copy .python-version if it lives alongside the first file in the list
+  if (arConfig.files.length > 0) {
+    const pyVersionSrc = path.join(path.dirname(arConfig.files[0].src), ".python-version");
+    if (fs.existsSync(pyVersionSrc)) {
+      fs.copyFileSync(pyVersionSrc, path.join(workspacePath, ".python-version"));
+    }
   }
 
-  // 4. Run prepare.py if data isn't cached yet
-  const cacheDir = path.join(process.env.HOME ?? "/root", ".cache", "autoresearch");
-  const dataReady = fs.existsSync(path.join(cacheDir, "data")) &&
-    fs.existsSync(path.join(cacheDir, "tokenizer", "tokenizer.pkl"));
-  if (!dataReady) {
-    log.info("Autoresearch data not found, running prepare.py...");
-    onAgentUpdate({
-      event: "notification",
-      timestamp: new Date(),
-      agent_pid: null,
-      message: "Running prepare.py to download data and train tokenizer...",
-    });
-    execSync("python prepare.py", { cwd: workspacePath, stdio: "inherit", timeout: 300000 });
-    log.info("prepare.py completed");
+  // 4. Run bootstrap command if sentinel paths are missing
+  if (arConfig.bootstrap) {
+    const missing = arConfig.bootstrap.check_paths
+      .map((p) => expandPath(p))
+      .filter((p) => !fs.existsSync(p));
+    if (missing.length > 0) {
+      log.info(
+        { missing, command: arConfig.bootstrap.command },
+        "Bootstrap sentinel paths missing, running bootstrap command",
+      );
+      onAgentUpdate({
+        event: "notification",
+        timestamp: new Date(),
+        agent_pid: null,
+        message: `Running bootstrap: ${arConfig.bootstrap.command}`,
+      });
+      execSync(arConfig.bootstrap.command, {
+        cwd: workspacePath,
+        stdio: "inherit",
+        timeout: arConfig.bootstrap.timeout_ms,
+        shell: "/bin/sh",
+      });
+      log.info("Bootstrap completed");
+    }
   }
 
   // 5. Initialize git repo if needed
@@ -215,7 +222,7 @@ export async function runAutoresearch(
     if (knowledgeStore) {
       try {
         knowledgeHits = await knowledgeStore.search(
-          "techniques to improve val_bpb transformer pretraining",
+          arConfig.knowledge_query,
           5,
         );
         if (knowledgeHits.length > 0) {
@@ -233,6 +240,9 @@ export async function runAutoresearch(
       lastCrashError,
       knowledgeHits,
       searxngEndpoint: arConfig.searxng_endpoint,
+      resultsSchema: arConfig.results_schema,
+      instructionFilename: arConfig.instruction_filename,
+      metricDirection: arConfig.metrics.primary.direction,
     });
 
     // Wrap onAgentUpdate to also intercept webfetch results

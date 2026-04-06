@@ -2,7 +2,18 @@ import os from "node:os";
 import path from "node:path";
 import { resolveEnvVar } from "../utils/env.js";
 import { expandPath } from "../utils/path.js";
-import type { ServiceConfig, OrchestratorMode } from "../types/workflow.js";
+import type {
+  ServiceConfig,
+  OrchestratorMode,
+  FileCopy,
+  BootstrapConfig,
+  MetricsConfig,
+  ResultsSchema,
+  SummaryMetricField,
+  ProgressMetricField,
+  MetricFieldType,
+  MetricDirection,
+} from "../types/workflow.js";
 
 /**
  * Build a fully resolved ServiceConfig from raw WORKFLOW.md front matter.
@@ -117,12 +128,92 @@ function buildOpenCodeConfig(raw: Record<string, unknown>) {
   };
 }
 
+/**
+ * Default nanochat-profile metrics/schema/bootstrap. Used when the user
+ * doesn't supply the corresponding generic fields in WORKFLOW.md. These
+ * defaults encode today's hard-coded behavior so existing configs keep
+ * working verbatim.
+ */
+export const NANOCHAT_METRICS: MetricsConfig = {
+  primary: {
+    name: "val_bpb",
+    direction: "minimize",
+    label: "val_bpb",
+    format: "%.6f",
+  },
+  summary_fields: [
+    { name: "peak_vram_mb", type: "float", label: "Peak VRAM (MB)" },
+    { name: "mfu_percent", type: "float", label: "MFU %" },
+    { name: "total_tokens_M", type: "float", label: "Tokens (M)" },
+    { name: "num_steps", type: "int", label: "Steps" },
+    { name: "num_params_M", type: "float", label: "Params (M)" },
+  ],
+  progress_line: [
+    { name: "step", pattern: "step\\s+(\\d+)", type: "int", label: "Step" },
+    { name: "progress_pct", pattern: "\\(([\\d.]+)%\\)", type: "float" },
+    { name: "loss", pattern: "loss:\\s+([\\d.]+)", type: "float", label: "Loss" },
+    { name: "lr_multiplier", pattern: "lrm:\\s+([\\d.]+)", type: "float" },
+    { name: "dt_ms", pattern: "dt:\\s+(\\d+)ms", type: "int" },
+    { name: "tok_per_sec", pattern: "tok\\/sec:\\s+([\\d,]+)", type: "int_commas", label: "Tok/s" },
+    { name: "mfu_pct", pattern: "mfu:\\s+([\\d.]+)%", type: "float", label: "MFU" },
+    { name: "remaining_sec", pattern: "remaining:\\s+(\\d+)s", type: "int" },
+  ],
+};
+
+export const NANOCHAT_RESULTS_SCHEMA: ResultsSchema = {
+  columns: ["commit", "val_bpb", "final_loss", "memory_gb", "status", "description"],
+  metric_column: "val_bpb",
+  status_column: "status",
+  description_column: "description",
+  keep_status: "keep",
+  discard_statuses: ["discard", "crash"],
+};
+
+export const NANOCHAT_BOOTSTRAP: BootstrapConfig = {
+  check_paths: [
+    "~/.cache/autoresearch/data",
+    "~/.cache/autoresearch/tokenizer/tokenizer.pkl",
+  ],
+  command: "python prepare.py",
+  timeout_ms: 300000,
+};
+
 function buildAutoresearchConfig(raw: Record<string, unknown>) {
+  const program_md = getString(raw, "program_md", "./autoresearch/program.md");
+  const prepare_py = getString(raw, "prepare_py", "./autoresearch/prepare.py");
+  const train_py = getString(raw, "train_py", "./autoresearch/train.py");
+  const pyproject_toml = getString(raw, "pyproject_toml", "./autoresearch/pyproject.toml");
+
+  // Files: explicit list overrides legacy fields. If absent, synthesize
+  // from prepare_py/train_py/pyproject_toml (back-compat).
+  let files = parseFilesList(raw.files);
+  if (files.length === 0) {
+    files = synthesizeFilesFromLegacy(prepare_py, train_py, pyproject_toml);
+  }
+
+  // Bootstrap: explicit config overrides; null disables; absent = nanochat default.
+  let bootstrap: BootstrapConfig | null;
+  if (Object.prototype.hasOwnProperty.call(raw, "bootstrap")) {
+    const bsRaw = raw.bootstrap;
+    if (bsRaw === null) {
+      bootstrap = null;
+    } else if (bsRaw && typeof bsRaw === "object" && !Array.isArray(bsRaw)) {
+      bootstrap = parseBootstrap(bsRaw as Record<string, unknown>);
+    } else {
+      bootstrap = NANOCHAT_BOOTSTRAP;
+    }
+  } else {
+    bootstrap = NANOCHAT_BOOTSTRAP;
+  }
+
+  const metrics = parseMetrics(getObj(raw, "metrics"));
+  const results_schema = parseResultsSchema(getObj(raw, "results_schema"));
+
   return {
-    program_md: getString(raw, "program_md", "./autoresearch/program.md"),
-    prepare_py: getString(raw, "prepare_py", "./autoresearch/prepare.py"),
-    train_py: getString(raw, "train_py", "./autoresearch/train.py"),
-    pyproject_toml: getString(raw, "pyproject_toml", "./autoresearch/pyproject.toml"),
+    program_md,
+    prepare_py,
+    train_py,
+    pyproject_toml,
     run_tag: getString(raw, "run_tag", new Date().toISOString().slice(5, 10).replace("-", "")),
     restart_on_crash: getBool(raw, "restart_on_crash", true),
     max_crash_restarts: getInt(raw, "max_crash_restarts", 10),
@@ -130,6 +221,140 @@ function buildAutoresearchConfig(raw: Record<string, unknown>) {
     embedding_endpoint: getStringOrNull(raw, "embedding_endpoint"),
     embedding_model: getString(raw, "embedding_model", ""),
     searxng_endpoint: getStringOrNull(raw, "searxng_endpoint"),
+    workspace_name: getString(raw, "workspace_name", "autoresearch"),
+    instruction_filename: getString(
+      raw,
+      "instruction_filename",
+      ".symphonic-autoresearch-user-instructions.md",
+    ),
+    knowledge_query: getString(
+      raw,
+      "knowledge_query",
+      "techniques to improve val_bpb transformer pretraining",
+    ),
+    files,
+    bootstrap,
+    metrics,
+    results_schema,
+  };
+}
+
+function synthesizeFilesFromLegacy(
+  prepare_py: string,
+  train_py: string,
+  pyproject_toml: string,
+): FileCopy[] {
+  const out: FileCopy[] = [];
+  if (prepare_py) out.push({ src: prepare_py, dest: "prepare.py" });
+  if (train_py) out.push({ src: train_py, dest: "train.py" });
+  if (pyproject_toml) out.push({ src: pyproject_toml, dest: "pyproject.toml" });
+  return out;
+}
+
+function parseFilesList(raw: unknown): FileCopy[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FileCopy[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const obj = entry as Record<string, unknown>;
+    const src = getString(obj, "src", "");
+    const dest = getString(obj, "dest", "");
+    if (src && dest) out.push({ src, dest });
+  }
+  return out;
+}
+
+function parseBootstrap(raw: Record<string, unknown>): BootstrapConfig {
+  const checkPathsRaw = raw.check_paths;
+  const check_paths: string[] = Array.isArray(checkPathsRaw)
+    ? checkPathsRaw.map(String).filter(Boolean)
+    : NANOCHAT_BOOTSTRAP.check_paths;
+  return {
+    check_paths,
+    command: getString(raw, "command", NANOCHAT_BOOTSTRAP.command),
+    timeout_ms: getInt(raw, "timeout_ms", NANOCHAT_BOOTSTRAP.timeout_ms),
+  };
+}
+
+function parseMetrics(raw: Record<string, unknown>): MetricsConfig {
+  if (Object.keys(raw).length === 0) return NANOCHAT_METRICS;
+
+  const primaryRaw = getObj(raw, "primary");
+  const primary = {
+    name: getString(primaryRaw, "name", NANOCHAT_METRICS.primary.name),
+    direction: (getString(
+      primaryRaw,
+      "direction",
+      NANOCHAT_METRICS.primary.direction,
+    ) as MetricDirection),
+    label: getString(primaryRaw, "label", NANOCHAT_METRICS.primary.label),
+    format: getString(primaryRaw, "format", NANOCHAT_METRICS.primary.format),
+  };
+
+  const summary_fields = parseSummaryFields(raw.summary_fields);
+  const progress_line = parseProgressLine(raw.progress_line);
+
+  return { primary, summary_fields, progress_line };
+}
+
+function parseSummaryFields(raw: unknown): SummaryMetricField[] {
+  if (!Array.isArray(raw)) return NANOCHAT_METRICS.summary_fields;
+  const out: SummaryMetricField[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const obj = entry as Record<string, unknown>;
+    const name = getString(obj, "name", "");
+    if (!name) continue;
+    out.push({
+      name,
+      type: (getString(obj, "type", "float") as MetricFieldType),
+      label: getString(obj, "label", name),
+    });
+  }
+  return out;
+}
+
+function parseProgressLine(raw: unknown): ProgressMetricField[] {
+  if (!Array.isArray(raw)) return NANOCHAT_METRICS.progress_line;
+  const out: ProgressMetricField[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const obj = entry as Record<string, unknown>;
+    const name = getString(obj, "name", "");
+    const pattern = getString(obj, "pattern", "");
+    if (!name || !pattern) continue;
+    const label = getString(obj, "label", "");
+    out.push({
+      name,
+      pattern,
+      type: (getString(obj, "type", "float") as MetricFieldType),
+      label: label || undefined,
+    });
+  }
+  return out;
+}
+
+function parseResultsSchema(raw: Record<string, unknown>): ResultsSchema {
+  if (Object.keys(raw).length === 0) return NANOCHAT_RESULTS_SCHEMA;
+  const columnsRaw = raw.columns;
+  const columns: string[] = Array.isArray(columnsRaw)
+    ? columnsRaw.map(String).filter(Boolean)
+    : NANOCHAT_RESULTS_SCHEMA.columns;
+  const discardsRaw = raw.discard_statuses;
+  const discard_statuses: string[] = Array.isArray(discardsRaw)
+    ? discardsRaw.map(String).filter(Boolean)
+    : NANOCHAT_RESULTS_SCHEMA.discard_statuses;
+  return {
+    columns,
+    metric_column: getString(raw, "metric_column", NANOCHAT_RESULTS_SCHEMA.metric_column),
+    status_column: getString(raw, "status_column", NANOCHAT_RESULTS_SCHEMA.status_column),
+    description_column: getString(
+      raw,
+      "description_column",
+      NANOCHAT_RESULTS_SCHEMA.description_column,
+    ),
+    keep_status: getString(raw, "keep_status", NANOCHAT_RESULTS_SCHEMA.keep_status),
+    discard_statuses,
   };
 }
 

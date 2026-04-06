@@ -70,30 +70,97 @@ function validateLinearMode(config: ServiceConfig, errors: string[]) {
 function validateAutoresearchMode(config: ServiceConfig, errors: string[]) {
   const { autoresearch } = config;
 
-  // Validate required file paths exist
-  const filesToCheck = [
-    { path: autoresearch.program_md, name: "autoresearch.program_md", description: "Agent instructions" },
-    { path: autoresearch.prepare_py, name: "autoresearch.prepare_py", description: "Data preparation script" },
-    { path: autoresearch.train_py, name: "autoresearch.train_py", description: "Training script (agent modifies this)" },
-  ];
+  // program_md is always required
+  if (!autoresearch.program_md) {
+    errors.push("autoresearch.program_md is required for autoresearch mode");
+  } else if (!fs.existsSync(autoresearch.program_md)) {
+    errors.push(
+      `autoresearch.program_md file not found: ${autoresearch.program_md}\n` +
+      `  Expected: Agent instructions\n` +
+      `  Make sure the path in WORKFLOW.md points to an existing file`
+    );
+  }
 
-  for (const file of filesToCheck) {
-    if (!file.path) {
-      errors.push(`${file.name} is required for autoresearch mode`);
-    } else if (!fs.existsSync(file.path)) {
+  // Every file in the copy list must exist. This covers both legacy
+  // (synthesized from prepare_py/train_py/pyproject_toml) and new
+  // explicit `files:` entries.
+  if (autoresearch.files.length === 0) {
+    errors.push(
+      "autoresearch.files is empty. Provide either a `files:` list, " +
+      "or legacy fields prepare_py/train_py/pyproject_toml in WORKFLOW.md"
+    );
+  }
+  for (let i = 0; i < autoresearch.files.length; i++) {
+    const f = autoresearch.files[i];
+    if (!fs.existsSync(f.src)) {
       errors.push(
-        `${file.name} file not found: ${file.path}\n` +
-        `  Expected: ${file.description}\n` +
+        `autoresearch.files[${i}].src not found: ${f.src}\n` +
+        `  (dest: ${f.dest})\n` +
         `  Make sure the path in WORKFLOW.md points to an existing file`
       );
     }
   }
 
-  // pyproject.toml is optional but warn if specified and missing
-  if (autoresearch.pyproject_toml && !fs.existsSync(autoresearch.pyproject_toml)) {
+  // Metrics validation
+  const { metrics } = autoresearch;
+  if (metrics.primary.direction !== "minimize" && metrics.primary.direction !== "maximize") {
     errors.push(
-      `autoresearch.pyproject_toml file not found: ${autoresearch.pyproject_toml}\n` +
-      `  This file defines Python dependencies for the training environment`
+      `autoresearch.metrics.primary.direction must be "minimize" or "maximize", ` +
+      `got "${metrics.primary.direction}"`
+    );
+  }
+  if (!metrics.primary.name) {
+    errors.push("autoresearch.metrics.primary.name is required");
+  }
+  for (let i = 0; i < metrics.progress_line.length; i++) {
+    const pl = metrics.progress_line[i];
+    try {
+      new RegExp(pl.pattern);
+    } catch (err) {
+      errors.push(
+        `autoresearch.metrics.progress_line[${i}].pattern is not a valid regex: ` +
+        `${pl.pattern} (${(err as Error).message})`
+      );
+    }
+    if (pl.type !== "int" && pl.type !== "float" && pl.type !== "int_commas") {
+      errors.push(
+        `autoresearch.metrics.progress_line[${i}].type must be int/float/int_commas, ` +
+        `got "${pl.type}"`
+      );
+    }
+  }
+  for (let i = 0; i < metrics.summary_fields.length; i++) {
+    const sf = metrics.summary_fields[i];
+    if (sf.type !== "int" && sf.type !== "float" && sf.type !== "int_commas") {
+      errors.push(
+        `autoresearch.metrics.summary_fields[${i}].type must be int/float/int_commas, ` +
+        `got "${sf.type}"`
+      );
+    }
+  }
+
+  // Results schema validation
+  const { results_schema } = autoresearch;
+  const cols = results_schema.columns;
+  if (!cols.includes("commit")) {
+    errors.push(`autoresearch.results_schema.columns must include "commit"`);
+  }
+  if (!cols.includes(results_schema.metric_column)) {
+    errors.push(
+      `autoresearch.results_schema.metric_column "${results_schema.metric_column}" ` +
+      `is not in columns [${cols.join(", ")}]`
+    );
+  }
+  if (!cols.includes(results_schema.status_column)) {
+    errors.push(
+      `autoresearch.results_schema.status_column "${results_schema.status_column}" ` +
+      `is not in columns [${cols.join(", ")}]`
+    );
+  }
+  if (!cols.includes(results_schema.description_column)) {
+    errors.push(
+      `autoresearch.results_schema.description_column "${results_schema.description_column}" ` +
+      `is not in columns [${cols.join(", ")}]`
     );
   }
 
