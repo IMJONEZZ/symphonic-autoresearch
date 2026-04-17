@@ -1,0 +1,9 @@
+artifact	type	status	derived_from
+feature_matrix.tsv	code-grounded	verified	local repo inspection
+implementation_footprint.tsv	code-grounded	verified	local file inventories and line counts
+telemetry_visibility.tsv	code-grounded	verified	local repo inspection
+causal_mechanisms.tsv	mechanism mapping	verified/plausible split	local repo inspection plus explicit causal interpretation
+hero_comparison.tsv	synthesis	verified/plausible split	local repo inspection and README-derived benchmark summary
+benchmark_summary.tsv	reported metrics	not reproduced	local Symphonic README table
+reported_progress_proxy.tsv	reported metrics	not reproduced	local Symphonic README table
+reliability_summary.tsv	reported metrics	not reproduced	local Symphonic README table

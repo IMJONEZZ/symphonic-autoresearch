@@ -1,0 +1,3 @@
+system	python_files	typescript_files	markdown_files	test_files	docker_files	python_loc	typescript_loc	test_loc	markdown_loc
+autoresearch	2	0	2	0	0	1019	0	0	206
+symphonic_autoresearch	2	49	9	11	3	1019	6091	944	499
