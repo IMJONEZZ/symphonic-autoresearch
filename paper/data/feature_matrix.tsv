@@ -1,0 +1,11 @@
+feature	autoresearch	symphonic_autoresearch	evidence
+Core five-minute training loop	yes	yes	baseline README and vendored autoresearch files
+Python training core changed	n/a	no	prepare.py identical; train.py usage string differs only
+Crash recovery and restart loop	no	yes	src/agent/agent-runner.ts and src/orchestrator/orchestrator.ts
+Real-time dashboard	no	yes	src/server/dashboard.ts and src/server/routes.ts
+Hardware telemetry	no	yes	src/monitor/hardware-monitor.ts
+Operator instruction injection	no	yes	instruction API and workspace instruction file delivery
+Optional cross-session memory	no	yes	src/knowledge/*
+Hot-reloadable workflow config	no	yes	src/config/watcher.ts and example.WORKFLOW.md
+Container deployment path	no	yes	Dockerfile, docker-compose.yml, entrypoint.sh
+Unit-tested control plane	no	yes	test/unit/*.test.ts

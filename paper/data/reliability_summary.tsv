@@ -1,0 +1,3 @@
+system	total_experiments	kept	not_kept	crashes_reported	notes
+Karpathy autoresearch	126	23	103	NR	not_kept aggregates discards and any unreported crashes
+Symphonic Autoresearch	52	22	30	1	README states one recovered crash

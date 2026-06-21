@@ -1,0 +1,136 @@
+
+digraph Architecture {
+  graph [
+    ranksep="0.72 equally",
+    nodesep="0.42",
+    pad=0.18,
+    margin=0.06,
+    splines=ortho,
+    bgcolor="white",
+    fontname="Times-Roman"
+  ];
+  node [
+    shape=box,
+    style="rounded,filled",
+    fontname="Times-Roman",
+    fontsize=17,
+    penwidth=1.7,
+    color="#1C2430",
+    margin="0.20,0.12"
+  ];
+  edge [
+    arrowsize=0.8,
+    penwidth=1.6,
+    color="#1C2430"
+  ];
+
+  subgraph cluster_baseline {
+    label="Baseline loop";
+    labelloc="t";
+    fontsize=28;
+    fontname="Times-Bold";
+    fontcolor="#6B7280";
+    style="rounded,filled";
+    color="#E6EAF1";
+    fillcolor="#F5F7FB";
+    penwidth=0.0;
+
+    b_program [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><B>program.md</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">Single-agent instructions for</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">autonomous code editing</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#EAF1FB"];
+    b_train [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><B>train.py</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">Model, optimizer, and</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">five-minute training loop</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">edited by the agent</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#E6F4F1"];
+    b_prepare [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><B>prepare.py</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">Tokenizer, dataloader, dataset URL,</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">and BPB evaluation harness</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#FCEFE6"];
+    b_note [shape=plain, style="", color="white", fillcolor="white", margin=0.0, label=<
+      <FONT POINT-SIZE="15" COLOR="#6B7280"><B>Minimal interactive research loop</B><BR/>edit, run, inspect, keep or revert</FONT>
+    >];
+
+    b_program -> b_train;
+    b_train -> b_prepare;
+    b_prepare -> b_note [style=invis];
+  }
+
+  subgraph cluster_service {
+    label="Symphonic service layer";
+    labelloc="t";
+    fontsize=28;
+    fontname="Times-Bold";
+    fontcolor="#0F766E";
+    style="rounded,filled";
+    color="#E6F1EF";
+    fillcolor="#F7FBFA";
+    penwidth=0.0;
+
+    s_config [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><B>Workflow and config</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">WORKFLOW.md hot reload</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#EAF1FB"];
+    s_core [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><FONT COLOR="#0F766E"><B>Python core preserved</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">prepare.py and train.py</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">copied into workspace</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#E6F4F1"];
+    s_session [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><B>OpenCode session manager</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">Launches and supervises the</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">long-running agent session</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#EEF3F7"];
+    s_orch [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><FONT COLOR="#0F766E"><B>Orchestrator</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">Restart, retry, parse results,</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">snapshot state, dispatch logic</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#FCEFE6"];
+    s_obs [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><B>Observability</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">Dashboard, SSE trace,</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">step/loss progress, experiment table</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#EAF1FB"];
+    s_ops [label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLPADDING="4">
+        <TR><TD ALIGN="LEFT"><B>Operations</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">Hardware monitor, instruction queue,</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="13">memory store</FONT></TD></TR>
+      </TABLE>
+    >, fillcolor="#F3F4F6"];
+    s_note [shape=plain, style="", color="white", fillcolor="white", margin=0.0, label=<
+      <FONT POINT-SIZE="15" COLOR="#1C2430"><B>Contribution boundary</B><BR/>learning algorithm fixed; reliability, visibility, and steerability move into the control plane</FONT>
+    >];
+
+    {rank=same; s_config; s_core;}
+    {rank=same; s_session; s_orch;}
+    {rank=same; s_obs; s_ops;}
+
+    s_config -> s_session [color="#0F766E"];
+    s_core -> s_orch [color="#0F766E"];
+    s_session -> s_orch;
+    s_session -> s_obs [color="#0F766E"];
+    s_orch -> s_ops [color="#0F766E"];
+    s_obs -> s_note [style=invis];
+  }
+}
